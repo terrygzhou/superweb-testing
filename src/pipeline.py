@@ -23,20 +23,41 @@ console = Console()
 class Pipeline:
     """Orchestrate the full testing pipeline: analyze → generate → run → correlate."""
 
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(
+        self,
+        config_path: str | None = None,
+        output_dir: str = "./superweb_output",
+        target_url: str = "",
+        source_root: str = "",
+        llm_url: str = "",
+        llm_model: str = "",
+        n_variations: int = 3,
+    ):
         self.config = self._load_config(config_path)
-        self.base_dir = Path(config_path).parent if config_path else Path(".")
-        self.artifacts_dir = self.base_dir / self.config.get("pipeline", {}).get(
-            "artifacts_dir", "./artifacts"
-        )
+        self.output_dir = Path(output_dir).resolve()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir = self.output_dir / "artifacts"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Override config with explicit CLI args
+        if target_url:
+            self.config.setdefault("target", {})["url"] = target_url
+        if source_root:
+            self.config.setdefault("source", {})["root"] = source_root
+        if llm_url:
+            self.config.setdefault("llm", {})["base_url"] = llm_url
+        if llm_model:
+            self.config.setdefault("llm", {})["model"] = llm_model
+        self.config.setdefault("pipeline", {})["data_variations"] = n_variations
 
         # Intermediate data
         self.schemas: list[dict] = []
         self.dataset: TestDataset | None = None
 
-    def _load_config(self, config_path: str) -> dict:
+    def _load_config(self, config_path: str | None) -> dict:
         """Load configuration from YAML."""
+        if config_path is None:
+            return {}
         path = Path(config_path)
         if path.exists():
             return yaml.safe_load(path.read_text()) or {}
@@ -100,7 +121,7 @@ class Pipeline:
         result = analyzer.analyze()
 
         # Save schemas
-        schema_path = self.base_dir / "data" / "schemas.json"
+        schema_path = self.output_dir / "data" / "schemas.json"
         analyzer.save_results(result, str(schema_path))
 
         console.print(f"  Found {result.summary['forms_found']} forms, "
@@ -131,7 +152,7 @@ class Pipeline:
             await generator.close()
 
         # Save dataset
-        data_path = self.base_dir / "data" / "test_data.json"
+        data_path = self.output_dir / "data" / "test_data.json"
         generator.save(dataset, str(data_path))
 
         console.print(f"  Generated {len(dataset.records)} test records "

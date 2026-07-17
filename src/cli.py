@@ -1,7 +1,9 @@
 """CLI entry point for SuperWeb Testing."""
 
+from __future__ import annotations
+
 import asyncio
-import sys
+import subprocess
 from pathlib import Path
 
 import typer
@@ -15,39 +17,83 @@ app = typer.Typer(
 )
 
 
+def resolve_source(source: str, output: str) -> str:
+    """If source is a git URL, clone it to output/source; return local path."""
+    if source.startswith("https://") or source.startswith("git@"):
+        dest = Path(output) / "source"
+        dest.mkdir(parents=True, exist_ok=True)
+        console.print(f"[yellow]Cloning: {source} → {dest}[/yellow]")
+        subprocess.run(["git", "clone", source, str(dest)], check=True)
+        return str(dest)
+    return source
+
+
 @app.command()
 def run(
-    source: str = typer.Option(
-        "", "--source", "-s",
-        help="Path to target web app source code",
-    ),
     target: str = typer.Option(
         "", "--target", "-t",
-        help="URL of target web app",
+        help="URL of the target webapp (e.g. http://localhost:8081)",
+    ),
+    source: str = typer.Option(
+        "", "--source", "-s",
+        help="Local path or git URL of the webapp source code",
+    ),
+    output: str = typer.Option(
+        "./superweb_output", "--output", "-o",
+        help="Output/report directory for all artifacts",
     ),
     config: Path = typer.Option(
-        Path("config.yaml"), "--config", "-c",
-        help="Path to config.yaml",
+        None, "--config", "-c",
+        help="Optional config.yaml (defaults to self-contained)",
+    ),
+    llm_url: str = typer.Option(
+        "http://172.25.0.1:8080", "--llm-url",
+        help="LLM endpoint base URL (OpenAI-compatible)",
+    ),
+    llm_model: str = typer.Option(
+        "Qwen3.6-27B", "--llm-model",
+        help="LLM model name",
+    ),
+    variations: int = typer.Option(
+        3, "--variations", "-v",
+        help="Test data variations per form (1-5)",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
         help="Only analyze source, don't run browser tests",
     ),
 ):
-    """Run the full testing pipeline."""
+    """Run the full testing pipeline against a webapp."""
     async def main():
         from src.pipeline import Pipeline
 
-        p = Pipeline(str(config))
+        if not target:
+            console.print("[red]Error: --target URL is required[/red]")
+            raise typer.Exit(1)
+        if not source:
+            console.print("[red]Error: --source path/git URL is required[/red]")
+            raise typer.Exit(1)
+
+        source_path = resolve_source(source, output)
+
+        p = Pipeline(
+            config_path=str(config) if config else None,
+            output_dir=output,
+            target_url=target,
+            source_root=source_path,
+            llm_url=llm_url,
+            llm_model=llm_model,
+            n_variations=variations,
+        )
 
         if dry_run:
             console.print("[yellow]Dry run: source analysis only[/yellow]")
-            schemas = await p.phase1_analyze(source)
+            schemas = await p.phase1_analyze(source_path)
             console.print(f"Found {len(schemas)} form schemas")
             return
 
-        report = await p.run(source_override=source or None, target_override=target or None)
-        console.print(f"\n[bold]Pipeline complete.[/bold] Report in logs/correlation_report.json")
+        report = await p.run(source_override=source_path, target_override=target)
+        console.print(f"\n[bold]Pipeline complete.[/bold] Report: {output}/report/correlation_report.json")
 
     asyncio.run(main())
 
@@ -56,20 +102,32 @@ def run(
 def analyze(
     source: str = typer.Option(
         "", "--source", "-s",
-        help="Path to target web app source code",
+        help="Local path or git URL of the webapp source code",
+    ),
+    output: str = typer.Option(
+        "./superweb_output", "--output", "-o",
+        help="Output directory",
     ),
     config: Path = typer.Option(
-        Path("config.yaml"), "--config", "-c",
-        help="Path to config.yaml",
+        None, "--config", "-c",
     ),
 ):
     """Phase 1 only: Analyze source code for form schemas."""
-    async def main():
-        from src.source_analyzer import SourceAnalyzer
-        from src.pipeline import Pipeline as PipelineClass
+    if not source:
+        console.print("[red]Error: --source is required[/red]")
+        raise typer.Exit(1)
 
-        p = PipelineClass(str(config))
-        schemas = await p.phase1_analyze(source)
+    source_path = resolve_source(source, output)
+
+    async def main():
+        from src.pipeline import Pipeline
+
+        p = Pipeline(
+            config_path=str(config) if config else None,
+            output_dir=output,
+            source_root=source_path,
+        )
+        schemas = await p.phase1_analyze(source_path)
 
         console.print(f"\n[bold]Found {len(schemas)} form schemas:[/bold]")
         for s in schemas:
@@ -86,23 +144,30 @@ def generate(
         Path("data/schemas.json"), "--schemas",
         help="Path to schemas.json",
     ),
-    config: Path = typer.Option(
-        Path("config.yaml"), "--config", "-c",
-        help="Path to config.yaml",
+    output: str = typer.Option(
+        "./superweb_output", "--output", "-o",
+        help="Output directory for test data",
+    ),
+    llm_url: str = typer.Option(
+        "http://172.25.0.1:8080", "--llm-url",
+    ),
+    llm_model: str = typer.Option(
+        "Qwen3.6-27B", "--llm-model",
+    ),
+    variations: int = typer.Option(
+        3, "--variations", "-v",
     ),
 ):
     """Phase 2 only: Generate test data from schemas."""
     async def main():
         from src.data_generator import DataGenerator
-        from src.pipeline import Pipeline as PipelineClass
 
         schemas = __import__("json").loads(schemas_file.read_text())
-        p = PipelineClass(str(config))
-        llm_cfg = p.config.get("llm", {})
 
         gen = DataGenerator(
-            llm_base_url=llm_cfg.get("base_url", "http://172.25.0.1:8080"),
-            model=llm_cfg.get("model", "Qwen3.6-27B"),
+            llm_base_url=llm_url,
+            model=llm_model,
+            n_variations=variations,
         )
         try:
             dataset = await gen.generate(schemas)
@@ -112,16 +177,11 @@ def generate(
         finally:
             await gen.close()
 
-        gen.save(dataset, str(schemas_file.parent / "test_data.json"))
-        console.print(f"Generated {len(dataset.records)} test records → {schemas_file.parent / 'test_data.json'}")
+        out_path = Path(output) / "data" / "test_data.json"
+        gen.save(dataset, str(out_path))
+        console.print(f"Generated {len(dataset.records)} test records → {out_path}")
 
     asyncio.run(main())
-
-
-@app.command()
-def serve():
-    """Start the web dashboard for viewing test results."""
-    console.print("[yellow]Dashboard coming in next iteration[/yellow]")
 
 
 def main():
