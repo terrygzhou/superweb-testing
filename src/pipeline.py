@@ -102,6 +102,8 @@ class Pipeline:
             base_url="http://localhost:3005",
             compose_file=compose_path,
             timeout=self.agent_timeout,
+            model="openai/Qwen3.6-27B",
+            base_llm_url="http://172.25.0.1:8080",
         )
 
         console.print("[bold blue]Agent mode: Starting OpenHands container...[/bold blue]")
@@ -115,50 +117,72 @@ class Pipeline:
             # ── Conversation 1: Analyze ──────────────────────────────
             console.print("[bold blue]Conversation 1: Analyze source...[/bold blue]")
             analyze_goal = (
-                f"You are a QA automation engineer. Analyze the source code at {container_source}.\n"
-                f"1. Find all forms, API endpoints, and input schemas.\n"
-                f"2. Save a JSON file to {artifacts_dir}/analysis.json with:\n"
-                f"   - forms: list of {{'name': ..., 'fields': [{'field_name': ..., 'type': ..., 'required': ...}], 'endpoint': ...}}\n"
-                f"   - endpoints: list of API routes and expected methods\n"
-                f"3. Generate 3 realistic test data variations per form, save to {artifacts_dir}/test_data.json\n"
+                "You are a QA automation engineer. Analyze the source code at "
+                + container_source + ".\n"
+                "1. Find all forms, API endpoints, and input schemas.\n"
+                "2. Save a JSON file to " + artifacts_dir + "/analysis.json with:\n"
+                "   - forms: list of {'name': ..., 'fields': [{'field_name': ..., 'type': ..., 'required': ...}], 'endpoint': ...}\n"
+                "   - endpoints: list of API routes and expected methods\n"
+                "3. Generate 3 realistic test data variations per form, save to "
+                + artifacts_dir + "/test_data.json\n"
             )
             conv1_id = client.create_conversation(analyze_goal, container_source)
             console.print(f"  Conversation ID: {conv1_id}")
-            result1 = client.poll_conversation(conv1_id)
-            console.print(f"  [green]Analysis complete (status: {result1.get('status')})[/green]")
+
+            event_count = [0]
+            def on_event(evt):
+                kind = evt.get("kind", "unknown")
+                code = evt.get("code")
+                source = evt.get("source", "")
+                event_count[0] += 1
+                if code:
+                    console.print(f"  [red]⚠ Event #{event_count[0]}: {kind} (code: {code})[/red]")
+                elif source == "agent":
+                    console.print(f"  [dim]→ {kind}[/dim]")
+
+            result1 = client.poll_conversation_with_events(conv1_id, on_event=on_event)
+            exec_status = result1.get("execution_status", "unknown")
+            console.print(f"  [green]✓ Analysis complete (status: {exec_status}, events: {event_count[0]})[/green]")
 
             # ── Conversation 2: Test ─────────────────────────────────
             console.print("[bold blue]Conversation 2: Run tests...[/bold blue]")
             test_goal = (
-                f"You are a QA automation engineer. Run Playwright tests against {target_url}.\n"
-                f"1. Read test data from {artifacts_dir}/test_data.json\n"
-                f"2. Write Playwright scripts that submit each test case to the target webapp.\n"
-                f"3. Run the tests and capture screenshots on failure.\n"
-                f"4. Save results to {artifacts_dir}/test_results.json with:\n"
-                f"   - tests: list of {{test_name, status: 'passed'|'failed', duration_ms, screenshot: null|path}}\n"
-                f"   - summary: {{total, passed, failed}}\n"
+                "You are a QA automation engineer. Run Playwright tests against "
+                + target_url + ".\n"
+                "1. Read test data from " + artifacts_dir + "/test_data.json\n"
+                "2. Write Playwright scripts that submit each test case to the target webapp.\n"
+                "3. Run the tests and capture screenshots on failure.\n"
+                "4. Save results to " + artifacts_dir + "/test_results.json with:\n"
+                "   - tests: list of {test_name, status: 'passed'|'failed', duration_ms, screenshot: null|path}\n"
+                "   - summary: {total, passed, failed}\n"
             )
             conv2_id = client.create_conversation(test_goal, container_source)
             console.print(f"  Conversation ID: {conv2_id}")
-            result2 = client.poll_conversation(conv2_id)
-            console.print(f"  [green]Tests complete (status: {result2.get('status')})[/green]")
+
+            event_count[0] = 0
+            result2 = client.poll_conversation_with_events(conv2_id, on_event=on_event)
+            exec_status = result2.get("execution_status", "unknown")
+            console.print(f"  [green]✓ Tests complete (status: {exec_status}, events: {event_count[0]})[/green]")
 
             # ── Conversation 3: Report ────────────────────────────────
             console.print("[bold blue]Conversation 3: Generate report...[/bold blue]")
             report_goal = (
-                f"You are a QA automation engineer. Generate a final report.\n"
-                f"1. Read {artifacts_dir}/analysis.json and {artifacts_dir}/test_results.json\n"
-                f"2. Compile a structured report and save to {artifacts_dir}/report.json with:\n"
-                f"   - forms_analyzed: count\n"
-                f"   - test_records: count\n"
-                f"   - tests_passed: count\n"
-                f"   - tests_failed: count\n"
-                f"   - summary: narrative of findings\n"
+                "You are a QA automation engineer. Generate a final report.\n"
+                "1. Read " + artifacts_dir + "/analysis.json and " + artifacts_dir + "/test_results.json\n"
+                "2. Compile a structured report and save to " + artifacts_dir + "/report.json with:\n"
+                "   - forms_analyzed: count\n"
+                "   - test_records: count\n"
+                "   - tests_passed: count\n"
+                "   - tests_failed: count\n"
+                "   - summary: narrative of findings\n"
             )
             conv3_id = client.create_conversation(report_goal, container_source)
             console.print(f"  Conversation ID: {conv3_id}")
-            result3 = client.poll_conversation(conv3_id)
-            console.print(f"  [green]Report complete (status: {result3.get('status')})[/green]")
+
+            event_count[0] = 0
+            result3 = client.poll_conversation_with_events(conv3_id, on_event=on_event)
+            exec_status = result3.get("execution_status", "unknown")
+            console.print(f"  [green]✓ Report complete (status: {exec_status}, events: {event_count[0]})[/green]")
 
             # ── Collect artifacts ────────────────────────────────────
             report_path = self.output_dir / "agent_report.json"
