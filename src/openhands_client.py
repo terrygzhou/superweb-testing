@@ -117,7 +117,7 @@ class OpenHandsClient:
             "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
             "initial_message": {"content": [{"text": goal}]},
             "agent": {
-                "llm": {"model": self.model, "base_url": self.base_llm_url, "api_key": "dummy"},
+                "llm": {"model": self.model, "base_url": self.base_llm_url.rstrip("/") + "/v1", "api_key": "dummy"},
             },
             "confirmation_policy": {"kind": "NeverConfirm"},
         }
