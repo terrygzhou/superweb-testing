@@ -1,0 +1,24 @@
+[project]
+name = "superweb-testing"
+version = "0.1.0"
+description = "AI-driven web app E2E testing: source-aware data generation, browser automation, server log correlation"
+requires-python = ">=3.12"
+dependencies = [
+    "playwright>=1.49",
+    "httpx>=0.28",
+    "pyyaml>=6.0",
+    "openai>=1.60",
+    "rich>=13.9",
+    "typer>=0.15",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+superweb = "superweb_testing.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling:build"

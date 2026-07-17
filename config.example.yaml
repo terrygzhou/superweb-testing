@@ -1,0 +1,68 @@
+# SuperWeb Testing Configuration
+
+# LLM endpoint for test data generation
+llm:
+  base_url: "http://172.25.0.1:8080"
+  model: "Qwen3.6-27B"
+  api_key: "not-needed"  # local LLM
+
+# Target web application
+target:
+  url: "http://localhost:8081"
+  # Paths to scan for forms/inputs
+  scan_paths:
+    - "/"
+    - "/login"
+    - "/register"
+
+# Source code analysis
+source:
+  # Path to target web app source code
+  root: "~/workspace/projects/loop_factory"
+  # File patterns to scan for form schemas
+  form_patterns:
+    - "**/forms.py"
+    - "**/schemas.py"
+    - "**/models.py"
+    - "**/validators.py"
+    - "**/*_form.py"
+    - "**/schema*.py"
+  # Route patterns to find form endpoints
+  route_patterns:
+    - "**/routes.py"
+    - "**/api.py"
+    - "**/endpoints.py"
+
+# Server log monitoring
+logs:
+  # How to access server logs
+  type: "docker"  # docker | file | journalctl
+  docker_container: "loop_factory_web"
+  # Or: log_file: "/path/to/server.log"
+  # Or: journal_unit: "webapp.service"
+  # Keywords that indicate errors
+  error_patterns:
+    - "ERROR"
+    - "Exception"
+    - "Traceback"
+    - "500"
+    - "Connection refused"
+
+# Playwright settings
+browser:
+  headless: true
+  timeout_ms: 30000
+  viewport:
+    width: 1280
+    height: 720
+  # Auth tokens or cookies to pre-load
+  storage_state: null
+
+# Pipeline settings
+pipeline:
+  # Number of test data variations per form
+  data_variations: 3
+  # Max concurrent browser pages
+  max_pages: 3
+  # Save artifacts
+  artifacts_dir: "./artifacts"
