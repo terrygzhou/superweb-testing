@@ -92,7 +92,7 @@ class OpenHandsClient:
                 resp = self._client.get("/health", timeout=5.0)
                 if resp.status_code == 200:
                     health_ok = True
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.RemoteProtocolError):
                 pass
 
             if health_ok:
@@ -117,7 +117,7 @@ class OpenHandsClient:
             "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
             "initial_message": {"content": [{"text": goal}]},
             "agent": {
-                "llm": {"model": self.model, "base_url": self.base_llm_url},
+                "llm": {"model": self.model, "base_url": self.base_llm_url, "api_key": "dummy"},
             },
             "confirmation_policy": {"kind": "NeverConfirm"},
         }
