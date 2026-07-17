@@ -49,34 +49,10 @@ class SourceAnalysisResult(BaseModel):
     summary: dict[str, int] = Field(default_factory=dict)
 
 
-# Patterns for Python web frameworks
-_FORM_PATTERNS = re.compile(
-    r"""
-    (?:
-        (?P<form_class)class\s+(\w+)\s*\([Cc]onfirm|Form|Schema|BaseModel|Model)\b.*?:
-        |
-        (?P<form_field)\s+(\w+)\s*=\s*(?:Form\.)?(\w+)\(
-        |
-        (?P<pydantic_field>)\s+(\w+)\s*:\s*(\w+)(\s*=\s*Field\(.*?\))?
-        |
-        (?P<wtforms_field>)\s+(\w+)\s*=\s*(?:wtforms|webargs\.fields)\.(\w+)\(
-    )
-    """,
-    re.VERBOSE,
-)
+# Patterns for Python web frameworks — simplified for CLI usage
+_FORM_PATTERNS = re.compile(r"class\s+(\w+)\s*\([^)]*(?:BaseModel|Schema|Model)[^)]*\):", re.VERBOSE)
 
-_ROUTE_PATTERNS = re.compile(
-    r"""
-    (?:
-        (?P<fastapi>)@\w+\.(?:get|post|put|delete|patch)\s*\(\s*["'](.*?)["']
-        |
-        (?P<flask>)@\w+\.(?:route|get|post|put|delete)\s*\(\s*["'](.*?)["']
-        |
-        (?P<tornado>)default_routes\s*=\s*\[\s*\{.*?"path":\s*["'](.*?)["']
-    )
-    """,
-    re.VERBOSE,
-)
+_ROUTE_PATTERNS = re.compile(r"@[\w.]+(?:get|post|put|delete|patch)\s*\(\s*['\"]([^'\"]+)['\"]", re.VERBOSE)
 
 _TYPE_MAP: dict[str, str] = {
     "emailfield": "email",
