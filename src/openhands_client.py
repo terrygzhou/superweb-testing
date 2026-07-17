@@ -35,7 +35,7 @@ def _event_summary(evt: dict) -> str:
 
 # Terminal statuses for conversations
 TERMINAL_STATUSES = frozenset(
-    {"error", "stopped", "completed", "cancelled", "finished"}
+    {"error", "stopped", "completed", "cancelled", "finished", "stuck"}
 )
 
 
