@@ -33,6 +33,12 @@ def _event_summary(evt: dict) -> str:
     return f"[dim]{kind} ({source})[/dim]"
 
 
+# Terminal statuses for conversations
+TERMINAL_STATUSES = frozenset(
+    {"error", "stopped", "completed", "cancelled", "finished"}
+)
+
+
 class OpenHandsClient:
     """Manage the OpenHands Agent Server lifecycle and task submission."""
 
@@ -48,6 +54,7 @@ class OpenHandsClient:
         self.compose_file = compose_file
         self.timeout = timeout
         self.model = model
+        # vLLM serves at /v1/, litellm appends /chat/completions
         self.base_llm_url = base_llm_url.rstrip("/") + "/v1"
         self._client = httpx.Client(base_url=self.base_url, timeout=60.0)
 
@@ -85,7 +92,11 @@ class OpenHandsClient:
             return {"running": False}
 
     def wait_for_ready(self, retries: int = 60, interval: float = 2.0) -> None:
-        """Wait until /health and /api/conversations are ready."""
+        """Wait until /health and /api/conversations are ready.
+
+        Catches all exceptions — container startup can produce various
+        socket-level errors (ConnectError, RemoteProtocolError, ReadError).
+        """
         for i in range(retries):
             health_ok = False
             try:
@@ -117,7 +128,11 @@ class OpenHandsClient:
             "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
             "initial_message": {"content": [{"text": goal}]},
             "agent": {
-                "llm": {"model": self.model, "base_url": self.base_llm_url, "api_key": "dummy"},
+                "llm": {
+                    "model": self.model,
+                    "base_url": self.base_llm_url,
+                    "api_key": "dummy",
+                },
             },
             "confirmation_policy": {"kind": "NeverConfirm"},
         }
@@ -199,7 +214,7 @@ class OpenHandsClient:
                     last_id = eid
 
             status = self._get_execution_status(conv_id)
-            if status in ("error", "stopped", "completed", "cancelled", "finished"):
+            if status in TERMINAL_STATUSES:
                 return all_events
 
             time.sleep(poll_interval)
@@ -213,8 +228,10 @@ class OpenHandsClient:
         deadline = time.time() + self.timeout
         while time.time() < deadline:
             status = self._get_execution_status(conv_id)
-            if status in ("completed", "stopped", "cancelled", "error"):
-                return self._client.get(f"/api/conversations/{conv_id}", timeout=15.0).json()
+            if status in TERMINAL_STATUSES:
+                return self._client.get(
+                    f"/api/conversations/{conv_id}", timeout=15.0
+                ).json()
             time.sleep(3)
         raise OpenHandsError(f"Conversation {conv_id} timed out after {self.timeout}s")
 
