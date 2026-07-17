@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,8 @@ class Pipeline:
         llm_model: str = "",
         n_variations: int = 3,
         mode: str = "scripted",
+        agent_workspace: str = "",
+        agent_timeout: int = 600,
     ):
         self.config = self._load_config(config_path)
         self.output_dir = Path(output_dir).resolve()
@@ -52,6 +55,8 @@ class Pipeline:
 
         # Execution mode
         self.mode = mode
+        self.agent_workspace = agent_workspace
+        self.agent_timeout = agent_timeout
 
         # Intermediate data
         self.schemas: list[dict] = []
@@ -69,30 +74,34 @@ class Pipeline:
     async def run_agent_mode(
         self, source_root: str, target_url: str
     ) -> dict:
-        """Run in agent mode: delegate to OpenHands Agent Server."""
+        """Run in agent mode: delegate to OpenHands Agent Server.
+
+        Strategy: split monolithic task into 3 sequential conversations to avoid timeouts.
+        Each conversation shares the same workspace directory for state handoff.
+        """
         from src.openhands_client import OpenHandsClient, OpenHandsError
 
-        goal = (
-            f"You are a QA automation engineer. Complete the following task:\n"
-            f"1. Analyze the source code at {source_root} for forms, API endpoints, and input schemas.\n"
-            f"2. Generate at least 3 variations of realistic test data for each form/endpoint.\n"
-            f"3. Write Playwright scripts that submit these test cases against {target_url}.\n"
-            f"4. Run the Playwright tests and capture screenshots on failure.\n"
-            f"5. Monitor server logs (docker logs /var/log or journalctl) for errors.\n"
-            f"6. Save a structured JSON report to {self.output_dir}/agent_report.json with:\n"
-            f"   - forms_analyzed: count of forms found\n"
-            f"   - test_records: total test cases generated\n"
-            f"   - tests_passed: count\n"
-            f"   - tests_failed: count\n"
-            f"   - log_errors: list of correlated server errors\n"
-            f"   - screenshots: list of screenshot paths"
+        # Copy source into the workspace dir that's mounted into the container
+        # compose.yaml mounts ./workspace → /opt/workspace_base
+        host_workspace = Path(__file__).parent.parent / "workspace" / "source"
+        host_workspace.parent.mkdir(parents=True, exist_ok=True)
+        if host_workspace.exists():
+            shutil.rmtree(host_workspace)
+        shutil.copytree(
+            source_root, host_workspace,
+            symlinks=False,
+            ignore=shutil.ignore_patterns(".git", "__pycache__", "node_modules", ".venv"),
         )
+        container_source = "/opt/workspace_base/source"
+        artifacts_dir = "/opt/workspace_base/artifacts"
+
+        console.print(f"[blue]Copied source → {host_workspace}[/blue]")
 
         compose_path = str(Path(__file__).parent.parent / "compose.yaml")
         client = OpenHandsClient(
             base_url="http://localhost:3005",
             compose_file=compose_path,
-            timeout=self.config.get("pipeline", {}).get("agent_timeout", 600),
+            timeout=self.agent_timeout,
         )
 
         console.print("[bold blue]Agent mode: Starting OpenHands container...[/bold blue]")
@@ -102,26 +111,84 @@ class Pipeline:
             console.print(f"[red]OpenHands startup failed: {e}[/red]")
             raise OpenHandsError(f"OpenHands startup failed: {e}")
 
-        console.print("[bold blue]Submitting testing goal to agent...[/bold blue]")
-        conv_id = client.create_conversation(goal, source_root)
-        console.print(f"  Conversation ID: {conv_id}")
-
         try:
-            console.print("[bold blue]Polling for results (this may take several minutes)...[/bold blue]")
-            result = client.poll_conversation(conv_id)
-            artifacts = client.fetch_artifacts(conv_id)
+            # ── Conversation 1: Analyze ──────────────────────────────
+            console.print("[bold blue]Conversation 1: Analyze source...[/bold blue]")
+            analyze_goal = (
+                f"You are a QA automation engineer. Analyze the source code at {container_source}.\n"
+                f"1. Find all forms, API endpoints, and input schemas.\n"
+                f"2. Save a JSON file to {artifacts_dir}/analysis.json with:\n"
+                f"   - forms: list of {{'name': ..., 'fields': [{'field_name': ..., 'type': ..., 'required': ...}], 'endpoint': ...}}\n"
+                f"   - endpoints: list of API routes and expected methods\n"
+                f"3. Generate 3 realistic test data variations per form, save to {artifacts_dir}/test_data.json\n"
+            )
+            conv1_id = client.create_conversation(analyze_goal, container_source)
+            console.print(f"  Conversation ID: {conv1_id}")
+            result1 = client.poll_conversation(conv1_id)
+            console.print(f"  [green]Analysis complete (status: {result1.get('status')})[/green]")
+
+            # ── Conversation 2: Test ─────────────────────────────────
+            console.print("[bold blue]Conversation 2: Run tests...[/bold blue]")
+            test_goal = (
+                f"You are a QA automation engineer. Run Playwright tests against {target_url}.\n"
+                f"1. Read test data from {artifacts_dir}/test_data.json\n"
+                f"2. Write Playwright scripts that submit each test case to the target webapp.\n"
+                f"3. Run the tests and capture screenshots on failure.\n"
+                f"4. Save results to {artifacts_dir}/test_results.json with:\n"
+                f"   - tests: list of {{test_name, status: 'passed'|'failed', duration_ms, screenshot: null|path}}\n"
+                f"   - summary: {{total, passed, failed}}\n"
+            )
+            conv2_id = client.create_conversation(test_goal, container_source)
+            console.print(f"  Conversation ID: {conv2_id}")
+            result2 = client.poll_conversation(conv2_id)
+            console.print(f"  [green]Tests complete (status: {result2.get('status')})[/green]")
+
+            # ── Conversation 3: Report ────────────────────────────────
+            console.print("[bold blue]Conversation 3: Generate report...[/bold blue]")
+            report_goal = (
+                f"You are a QA automation engineer. Generate a final report.\n"
+                f"1. Read {artifacts_dir}/analysis.json and {artifacts_dir}/test_results.json\n"
+                f"2. Compile a structured report and save to {artifacts_dir}/report.json with:\n"
+                f"   - forms_analyzed: count\n"
+                f"   - test_records: count\n"
+                f"   - tests_passed: count\n"
+                f"   - tests_failed: count\n"
+                f"   - summary: narrative of findings\n"
+            )
+            conv3_id = client.create_conversation(report_goal, container_source)
+            console.print(f"  Conversation ID: {conv3_id}")
+            result3 = client.poll_conversation(conv3_id)
+            console.print(f"  [green]Report complete (status: {result3.get('status')})[/green]")
+
+            # ── Collect artifacts ────────────────────────────────────
+            report_path = self.output_dir / "agent_report.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Try to read the report from workspace
+            host_report = host_workspace.parent / "artifacts" / "report.json"
+            if host_report.exists():
+                report_data = json.loads(host_report.read_text())
+                report_path.write_text(
+                    json.dumps(report_data, indent=2, default=str), encoding="utf-8"
+                )
+                console.print(f"[bold]Agent report saved: {report_path}[/bold]")
+                return report_data
+            else:
+                # Fallback: combine conversation results
+                combined = {
+                    "analysis": result1,
+                    "tests": result2,
+                    "report": result3,
+                }
+                report_path.write_text(
+                    json.dumps(combined, indent=2, default=str), encoding="utf-8"
+                )
+                console.print(f"[yellow]Report fallback: {report_path}[/yellow]")
+                return combined
         finally:
             console.print("[yellow]Stopping OpenHands container...[/yellow]")
             client.stop_server()
             client.close()
-
-        # Save agent output
-        report_path = self.output_dir / "agent_report.json"
-        Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
-        console.print(f"[bold]Agent report saved: {report_path}[/bold]")
-
-        return result
 
     async def run(self, source_override: str = "", target_override: str = "") -> dict:
         """Run the full pipeline in the configured mode."""

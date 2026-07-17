@@ -26,10 +26,12 @@ class OpenHandsClient:
         base_url: str = "http://localhost:3005",
         compose_file: str | None = None,
         timeout: int = 600,
+        workspace_mount: str | None = None,
     ):
         self.base_url = base_url
         self.compose_file = compose_file
         self.timeout = timeout
+        self.workspace_mount = workspace_mount
         self._client = httpx.Client(base_url=self.base_url, timeout=60.0)
 
     # --- Lifecycle ---
@@ -100,7 +102,7 @@ class OpenHandsClient:
                 resp = self._client.post(
                     "/api/conversations", json=payload, timeout=30.0
                 )
-                if resp.status_code == 200:
+                if resp.status_code in (200, 201):
                     data = resp.json()
                     return data.get("id", data.get("conversation_id", ""))
                 raise OpenHandsError(

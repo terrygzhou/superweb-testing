@@ -69,6 +69,15 @@ def run(
         "scripted", "--mode",
         help="Execution mode: scripted (deterministic pipeline) or agent (OpenHands-powered)",
     ),
+    agent_workspace: str = typer.Option(
+        "", "--agent-workspace",
+        help="Host directory to mount into the OpenHands container (agent mode only). "
+        "E.g. /home/terry/workspace/projects/openhands_output",
+    ),
+    agent_timeout: int = typer.Option(
+        600, "--agent-timeout",
+        help="Agent timeout in seconds (agent mode only, default 600)",
+    ),
 ):
     """Run the full testing pipeline against a webapp."""
     async def run_main():
@@ -92,6 +101,8 @@ def run(
             llm_model=llm_model,
             n_variations=variations,
             mode=mode,
+            agent_workspace=agent_workspace,
+            agent_timeout=agent_timeout,
         )
 
         if dry_run:
