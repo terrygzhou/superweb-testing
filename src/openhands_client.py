@@ -88,8 +88,12 @@ class OpenHandsClient:
     ) -> str:
         """Create a new conversation (task) and return the conversation ID."""
         payload = {
-            "goal": goal,
-            "workspace": workspace,
+            "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
+            "initial_message": {"content": [{"text": goal}]},
+            "agent": {
+                "llm": {"model": "Qwen3.6-27B", "base_url": "http://172.25.0.1:8080"},
+            },
+            "confirmation_policy": {"kind": "NeverConfirm"},
         }
         for attempt in range(n_retries):
             try:

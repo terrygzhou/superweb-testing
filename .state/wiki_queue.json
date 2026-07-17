@@ -1,0 +1,12 @@
+{
+  "issues": [
+    {
+      "id": "rate-limit-sleep",
+      "title": "RateLimitError retry_after ignored — always sleeps 2s",
+      "file": "src/data_generator.py",
+      "line": 262,
+      "description": "When LLM endpoint returns 429 with retry_after=60, the retry logic sleeps hardcoded 2 seconds instead of respecting the server's retry_after value.",
+      "status": "open"
+    }
+  ]
+}
