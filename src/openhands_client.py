@@ -48,7 +48,7 @@ class OpenHandsClient:
         self.compose_file = compose_file
         self.timeout = timeout
         self.model = model
-        self.base_llm_url = base_llm_url
+        self.base_llm_url = base_llm_url.rstrip("/") + "/v1"
         self._client = httpx.Client(base_url=self.base_url, timeout=60.0)
 
     # --- Lifecycle ---
@@ -92,7 +92,7 @@ class OpenHandsClient:
                 resp = self._client.get("/health", timeout=5.0)
                 if resp.status_code == 200:
                     health_ok = True
-            except (httpx.ConnectError, httpx.RemoteProtocolError):
+            except Exception:
                 pass
 
             if health_ok:
@@ -100,7 +100,7 @@ class OpenHandsClient:
                     conv_resp = self._client.get("/api/conversations", timeout=5.0)
                     if conv_resp.status_code in (200, 422):
                         return
-                except (httpx.ConnectError, httpx.RemoteProtocolError):
+                except Exception:
                     pass
 
             if i < retries - 1:
@@ -117,7 +117,7 @@ class OpenHandsClient:
             "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
             "initial_message": {"content": [{"text": goal}]},
             "agent": {
-                "llm": {"model": self.model, "base_url": self.base_llm_url.rstrip("/") + "/v1", "api_key": "dummy"},
+                "llm": {"model": self.model, "base_url": self.base_llm_url, "api_key": "dummy"},
             },
             "confirmation_policy": {"kind": "NeverConfirm"},
         }
