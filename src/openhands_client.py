@@ -199,7 +199,7 @@ class OpenHandsClient:
                     last_id = eid
 
             status = self._get_execution_status(conv_id)
-            if status in ("error", "stopped", "completed", "cancelled"):
+            if status in ("error", "stopped", "completed", "cancelled", "finished"):
                 return all_events
 
             time.sleep(poll_interval)
