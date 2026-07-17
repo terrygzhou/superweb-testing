@@ -4,12 +4,20 @@ Self-contained, distributable testing pipeline that analyzes webapp source code 
 
 ## Quickstart
 
+### Install
+
 ```bash
 cd /home/terry/workspace/projects/superweb_testing
 uv venv && source .venv/bin/activate
 uv pip install -e .
 playwright install chromium
+```
 
+### Run
+
+The `superweb` CLI can be invoked from **any directory** — only the target source and output paths need to be specified (use absolute paths when running outside the project):
+
+```bash
 # Start OpenHands (for agent mode only)
 superweb openhands-start
 
@@ -21,6 +29,19 @@ superweb run --target http://localhost:8081 --source ./my-app --mode agent
 
 # Dry run (source analysis only)
 superweb run --target http://localhost:8081 --source ./my-app --dry-run
+
+# From any other directory — use absolute paths (scripted mode)
+superweb run \
+  --target http://localhost:8081 \
+  --source /home/terry/workspace/projects/loop_factory \
+  --output /tmp/test_output
+
+# Agent mode from any directory
+superweb run \
+  --target http://localhost:8081 \
+  --source /home/terry/workspace/projects/loop_factory \
+  --output /tmp/test_output \
+  --mode agent
 ```
 
 ## Architecture
