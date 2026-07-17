@@ -13,3 +13,7 @@ data/
 artifacts/
 logs/
 *.pyc
+
+# OpenHands workspace & cache
+workspace/
+~/.openhands/

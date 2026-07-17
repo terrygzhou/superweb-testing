@@ -17,7 +17,7 @@ dependencies = [
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 
 [project.scripts]
-superweb = "superweb_testing.cli:main"
+superweb = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,30 @@
+# OpenHands Agent Server
+services:
+  openhands:
+    image: ghcr.io/openhands/agent-server:1.30.0-python
+    container_name: openhands-server
+    restart: unless-stopped
+    ports:
+      - "3005:8000"
+    volumes:
+      # Persistent data (SQLite DB, config, sessions)
+      - ~/.openhands:/.openhands
+      # Workspace for source code analysis
+      - ./workspace:/opt/workspace_base:rw
+      # Docker socket for sandbox spawning
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - LLM_BASE_URL=http://172.25.0.1:8080
+      - LLM_MODEL=Qwen3.6-27B
+      - SANDBOX_USER_ID=${SANDBOX_USER_ID:-1000}
+      - AGENT_SERVER_IMAGE_REPOSITORY=ghcr.io/openhands/agent-server
+      - AGENT_SERVER_IMAGE_TAG=1.30.0-python
+      - WORKSPACE_BASE=/opt/workspace_base
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - openhands-network
+
+networks:
+  openhands-network:
+    driver: bridge

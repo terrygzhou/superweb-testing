@@ -28,6 +28,9 @@ def resolve_source(source: str, output: str) -> str:
     return source
 
 
+# --- Commands ---
+
+
 @app.command()
 def run(
     target: str = typer.Option(
@@ -62,17 +65,21 @@ def run(
         False, "--dry-run",
         help="Only analyze source, don't run browser tests",
     ),
+    mode: str = typer.Option(
+        "scripted", "--mode",
+        help="Execution mode: scripted (deterministic pipeline) or agent (OpenHands-powered)",
+    ),
 ):
     """Run the full testing pipeline against a webapp."""
-    async def main():
+    async def run_main():
         from src.pipeline import Pipeline
 
         if not target:
             console.print("[red]Error: --target URL is required[/red]")
-            raise typer.Exit(1)
+            raise SystemExit(1)
         if not source:
             console.print("[red]Error: --source path/git URL is required[/red]")
-            raise typer.Exit(1)
+            raise SystemExit(1)
 
         source_path = resolve_source(source, output)
 
@@ -84,6 +91,7 @@ def run(
             llm_url=llm_url,
             llm_model=llm_model,
             n_variations=variations,
+            mode=mode,
         )
 
         if dry_run:
@@ -95,7 +103,7 @@ def run(
         report = await p.run(source_override=source_path, target_override=target)
         console.print(f"\n[bold]Pipeline complete.[/bold] Report: {output}/report/correlation_report.json")
 
-    asyncio.run(main())
+    asyncio.run(run_main())
 
 
 @app.command()
@@ -115,7 +123,7 @@ def analyze(
     """Phase 1 only: Analyze source code for form schemas."""
     if not source:
         console.print("[red]Error: --source is required[/red]")
-        raise typer.Exit(1)
+        raise SystemExit(1)
 
     source_path = resolve_source(source, output)
 
@@ -182,6 +190,36 @@ def generate(
         console.print(f"Generated {len(dataset.records)} test records → {out_path}")
 
     asyncio.run(main())
+
+
+# --- OpenHands container management ---
+
+
+@app.command(name="openhands-start")
+def openhands_start():
+    """Start the OpenHands Agent Server container."""
+    subprocess.run(["docker", "compose", "up", "-d"], check=True)
+    console.print("[green]OpenHands container started on port 3005[/green]")
+
+
+@app.command(name="openhands-stop")
+def openhands_stop():
+    """Stop the OpenHands Agent Server container."""
+    subprocess.run(["docker", "compose", "down"], check=False)
+    console.print("[yellow]OpenHands container stopped[/yellow]")
+
+
+@app.command(name="openhands-status")
+def openhands_status():
+    """Check OpenHands container status."""
+    result = subprocess.run(
+        ["docker", "compose", "ps", "--format", "json"],
+        capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        console.print(result.stdout)
+    else:
+        console.print("[red]OpenHands container not running[/red]")
 
 
 def main():

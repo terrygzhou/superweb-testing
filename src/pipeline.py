@@ -7,7 +7,6 @@ import json
 import time
 from pathlib import Path
 from typing import Any
-
 import yaml
 from rich.console import Console
 from rich.table import Table
@@ -32,6 +31,7 @@ class Pipeline:
         llm_url: str = "",
         llm_model: str = "",
         n_variations: int = 3,
+        mode: str = "scripted",
     ):
         self.config = self._load_config(config_path)
         self.output_dir = Path(output_dir).resolve()
@@ -50,6 +50,9 @@ class Pipeline:
             self.config.setdefault("llm", {})["model"] = llm_model
         self.config.setdefault("pipeline", {})["data_variations"] = n_variations
 
+        # Execution mode
+        self.mode = mode
+
         # Intermediate data
         self.schemas: list[dict] = []
         self.dataset: TestDataset | None = None
@@ -63,8 +66,75 @@ class Pipeline:
             return yaml.safe_load(path.read_text()) or {}
         return {}
 
+    async def run_agent_mode(
+        self, source_root: str, target_url: str
+    ) -> dict:
+        """Run in agent mode: delegate to OpenHands Agent Server."""
+        from src.openhands_client import OpenHandsClient, OpenHandsError
+
+        goal = (
+            f"You are a QA automation engineer. Complete the following task:\n"
+            f"1. Analyze the source code at {source_root} for forms, API endpoints, and input schemas.\n"
+            f"2. Generate at least 3 variations of realistic test data for each form/endpoint.\n"
+            f"3. Write Playwright scripts that submit these test cases against {target_url}.\n"
+            f"4. Run the Playwright tests and capture screenshots on failure.\n"
+            f"5. Monitor server logs (docker logs /var/log or journalctl) for errors.\n"
+            f"6. Save a structured JSON report to {self.output_dir}/agent_report.json with:\n"
+            f"   - forms_analyzed: count of forms found\n"
+            f"   - test_records: total test cases generated\n"
+            f"   - tests_passed: count\n"
+            f"   - tests_failed: count\n"
+            f"   - log_errors: list of correlated server errors\n"
+            f"   - screenshots: list of screenshot paths"
+        )
+
+        compose_path = str(Path(__file__).parent.parent / "compose.yaml")
+        client = OpenHandsClient(
+            base_url="http://localhost:3005",
+            compose_file=compose_path,
+            timeout=self.config.get("pipeline", {}).get("agent_timeout", 600),
+        )
+
+        console.print("[bold blue]Agent mode: Starting OpenHands container...[/bold blue]")
+        try:
+            client.start_server()
+        except Exception as e:
+            console.print(f"[red]OpenHands startup failed: {e}[/red]")
+            raise OpenHandsError(f"OpenHands startup failed: {e}")
+
+        console.print("[bold blue]Submitting testing goal to agent...[/bold blue]")
+        conv_id = client.create_conversation(goal, source_root)
+        console.print(f"  Conversation ID: {conv_id}")
+
+        try:
+            console.print("[bold blue]Polling for results (this may take several minutes)...[/bold blue]")
+            result = client.poll_conversation(conv_id)
+            artifacts = client.fetch_artifacts(conv_id)
+        finally:
+            console.print("[yellow]Stopping OpenHands container...[/yellow]")
+            client.stop_server()
+            client.close()
+
+        # Save agent output
+        report_path = self.output_dir / "agent_report.json"
+        Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+        console.print(f"[bold]Agent report saved: {report_path}[/bold]")
+
+        return result
+
     async def run(self, source_override: str = "", target_override: str = "") -> dict:
-        """Run the full pipeline."""
+        """Run the full pipeline in the configured mode."""
+        if self.mode == "agent":
+            source_root = source_override or self.config.get("source", {}).get(
+                "root", "~/workspace/projects/loop_factory"
+            )
+            target_url = target_override or self.config.get("target", {}).get(
+                "url", "http://localhost:8081"
+            )
+            return await self.run_agent_mode(source_root, target_url)
+
+        # Scripted mode (existing pipeline)
         start_time = time.time()
 
         console.print("\n[bold cyan]🚀 SuperWeb Testing Pipeline[/bold cyan]")
@@ -201,7 +271,7 @@ class Pipeline:
         console.print(f"\n  Total: {passed}/{len(results)} passed")
 
         # Save results
-        results_path = self.base_dir / "data" / "test_results.json"
+        results_path = self.output_dir / "data" / "test_results.json"
         results_json = json.dumps(
             [r.__dict__ for r in results], indent=2, default=str
         )
@@ -249,7 +319,7 @@ class Pipeline:
         console.print(f"  Correlated with tests: {len(correlations)}")
 
         # Save report
-        report_path = self.base_dir / "logs" / "correlation_report.json"
+        report_path = self.output_dir / "logs" / "correlation_report.json"
         Path(report_path).parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         console.print(f"  Report saved: {report_path}")
