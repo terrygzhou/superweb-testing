@@ -36,26 +36,29 @@ class OpenHandsClient:
 
     def start_server(self) -> None:
         """Start the OpenHands container via Docker Compose."""
-        cmd = ["docker", "compose", "up", "-d"]
+        cmd = ["docker", "compose"]
         if self.compose_file:
             cmd.extend(["-f", self.compose_file])
+        cmd.extend(["up", "-d"])
         console.print(f"[blue]Starting OpenHands: {' '.join(cmd)}[/blue]")
         subprocess.run(cmd, check=True)
         self.wait_for_ready()
 
     def stop_server(self) -> None:
         """Stop the OpenHands container."""
-        cmd = ["docker", "compose", "down"]
+        cmd = ["docker", "compose"]
         if self.compose_file:
             cmd.extend(["-f", self.compose_file])
+        cmd.append("down")
         console.print("[blue]Stopping OpenHands...[/blue]")
         subprocess.run(cmd, check=False)
 
     def status(self) -> dict:
         """Check container status."""
-        cmd = ["docker", "compose", "ps", "--format", "json"]
+        cmd = ["docker", "compose"]
         if self.compose_file:
             cmd.extend(["-f", self.compose_file])
+        cmd.extend(["ps", "--format", "json"])
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return {"running": True, "info": result.stdout}
