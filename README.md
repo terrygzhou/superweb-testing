@@ -9,7 +9,7 @@
   - `scripted` — Deterministic Playwright-based pipeline (default)
   - `agent` — OpenHands AI agent delegation (3-conversation workflow)
 - **Source-aware test data**: Extracts form schemas, endpoints, and input validation rules from source code
-- **LLM-powered generation**: Uses Qwen3.6-27B or any OpenAI-compatible model
+- **LLM-powered generation**: Uses any OpenAI-compatible model
 - **Structured output**: JSON results with timestamps, test data, and server log correlation
 
 ## Quick Start
@@ -19,7 +19,7 @@
 pip install -e .
 
 # Run full pipeline
-superweb run --target http://localhost:8081 --source /path/to/source
+superweb run --target http://localhost:8080 --source /path/to/source
 
 # Dry run (analysis only)
 superweb run --source /path/to/source --dry-run
@@ -36,14 +36,13 @@ superweb generate --schemas data/schemas.json
 ```bash
 # Main pipeline
 superweb run \
-  --target http://localhost:8081 \
+  --target http://localhost:8080 \
   --source /path/to/source \
   --output ./superweb_output \
-  --llm-url http://172.25.0.1:8080 \
-  --llm-model Qwen3.6-27B \
+  --llm-url http://localhost:8080 \
+  --llm-model gpt-4 \
   --variations 3 \
   --mode scripted \
-  --agent-workspace /path/to/workspace \
   --agent-timeout 600
 
 # OpenHands container management
@@ -124,8 +123,8 @@ Agent mode requires the **OpenHands Agent Server** container. It is managed via 
 
 ```bash
 # 1. Configure your LLM endpoint in compose.yaml environment vars:
-#    - LLM_BASE_URL=http://172.25.0.1:8080   # your LLM gateway
-#    - LLM_MODEL=Qwen3.6-27B                # model name
+#    - LLM_BASE_URL=http://localhost:8080     # your LLM gateway
+#    - LLM_MODEL=gpt-4                        # model name
 #
 # 2. Start the OpenHands container:
 docker compose -f compose.yaml up -d
@@ -171,16 +170,16 @@ Create `config.yaml` for persistent settings:
 
 ```yaml
 target:
-  url: "http://localhost:8081"
+  url: "http://localhost:8080"
 
 source:
-  root: "~/workspace/projects/loop_factory"
+  root: "/path/to/source"
   form_patterns: ["*.tsx", "*.py"]
   route_patterns: ["router.ts", "routes.ts"]
 
 llm:
-  base_url: "http://172.25.0.1:8080"
-  model: "Qwen3.6-27B"
+  base_url: "http://localhost:8080"
+  model: "gpt-4"
 
 browser:
   headless: true
