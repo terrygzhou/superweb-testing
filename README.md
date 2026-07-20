@@ -101,10 +101,69 @@ superweb_output/
 
 ## Requirements
 
+### All Modes
 - **Python 3.12+**
-- **Docker & Docker Compose** (for agent mode)
+- **LLM endpoint** (OpenAI-compatible API). Must be reachable from your host machine.
+
+### Scripted Mode Only
 - **Playwright** browsers: `playwright install`
-- **LLM endpoint** (OpenAI-compatible)
+
+### Agent Mode — OpenHands Container
+
+Agent mode requires the **OpenHands Agent Server** container. It is managed via `compose.yaml` in this repo and spawns ephemeral sandbox containers inside the OpenHands runtime.
+
+#### Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Docker & Docker Compose v2 | Container runtime + compose orchestration |
+| Docker-in-Docker | OpenHands mounts `/var/run/docker.sock` to spawn sandbox containers |
+| Accessible LLM | `LLM_BASE_URL` + `LLM_MODEL` env vars on the container (e.g. vLLM, OpenAI) |
+
+#### Quick Setup
+
+```bash
+# 1. Configure your LLM endpoint in compose.yaml environment vars:
+#    - LLM_BASE_URL=http://172.25.0.1:8080   # your LLM gateway
+#    - LLM_MODEL=Qwen3.6-27B                # model name
+#
+# 2. Start the OpenHands container:
+docker compose -f compose.yaml up -d
+#
+# 3. Verify it is healthy:
+curl -s http://localhost:3005/health
+# → {"status":"ok"}
+#
+# 4. Run the pipeline in agent mode:
+python3 -m src.cli run --target http://host.docker.internal:8080 \
+  --source /path/to/source --output ./superweb_test \
+  --mode agent --agent-timeout 3600
+#
+# 5. Stop when done (optional — pipeline auto-stops):
+docker compose -f compose.yaml down
+```
+
+#### How It Works
+
+The `compose.yaml` mounts:
+- `~/.openhands` → persistent agent data (SQLite, sessions)
+- `./workspace/` → source code workspace (mounted as `/opt/workspace_base` inside the container)
+- `/var/run/docker.sock` → Docker socket for sandbox container spawning
+
+The `extra_hosts` entry (`host.docker.internal:host-gateway`) allows the OpenHands container to reach the target application running on your host machine. **Use `http://host.docker.internal:<port>` as your `--target` URL** so the agent can reach it from inside the sandbox.
+
+#### Supported OpenHands Versions
+
+Tested with **OpenHands Agent Server v1.30.0**. Newer versions may require payload alignment in `src/openhands_client.py`. The agent uses these tool names: `terminal`, `file_editor`, `write_file`, `read_file`, `edit`, `glob`, `grep`, `list_directory`.
+
+#### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Connection refused` on `http://localhost:3005` | Container not running. Run `docker compose -f compose.yaml up -d`. |
+| Agent finishes with 0 actions | LLM not reachable from inside the container. Verify `LLM_BASE_URL` env var points to an IP reachable from Docker (e.g., host-gateway). |
+| `PermissionError` on workspace cleanup | Root-owned artifacts from a crashed prior run. Run `sudo rm -rf workspace/source workspace/artifacts`. |
+| Agent can't reach target URL | Target URL resolves to IPv6 or loopback from inside the container. Use `http://host.docker.internal:<port>`. |
 
 ## Config (Optional)
 
