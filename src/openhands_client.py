@@ -123,16 +123,41 @@ class OpenHandsClient:
     # --- Conversations ---
 
     def create_conversation(self, goal: str, workspace: str, n_retries: int = 3) -> str:
-        """Create a new conversation (task) and return the conversation ID."""
+        """Create a new conversation (task) and return the conversation ID.
+
+        Payload must match the SDK's StartConversationRequest model exactly.
+        Key requirements (from SDK source):
+        - agent.kind must be "Agent" for discriminated union dispatch
+        - agent.tools must be a list of tool names the agent can call
+        - initial_message must be a valid SendMessageRequest with role + typed content
+        - run=True triggers the agent loop immediately after creation
+        """
         payload = {
             "workspace": {"working_dir": workspace, "kind": "LocalWorkspace"},
-            "initial_message": {"content": [{"text": goal}]},
+            "initial_message": {
+                "role": "user",
+                "content": [{"type": "text", "text": goal}],
+                "run": True,
+            },
             "agent": {
+                "kind": "Agent",
                 "llm": {
                     "model": self.model,
                     "base_url": self.base_llm_url,
                     "api_key": "dummy",
                 },
+                # OpenHands v1.30.0 tool names (from /api/tools/).
+                # Covers: shell, file I/O, glob/grep, directory listing.
+                "tools": [
+                    {"name": "terminal"},
+                    {"name": "file_editor"},
+                    {"name": "write_file"},
+                    {"name": "read_file"},
+                    {"name": "edit"},
+                    {"name": "glob"},
+                    {"name": "grep"},
+                    {"name": "list_directory"},
+                ],
             },
             "confirmation_policy": {"kind": "NeverConfirm"},
         }

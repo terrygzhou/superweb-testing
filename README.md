@@ -1,164 +1,146 @@
-# SuperWeb Testing — AI-Driven E2E Web App Testing
+# SuperWeb Testing
 
-Self-contained, distributable testing pipeline that analyzes webapp source code and generates browser automation tests via Playwright. Supports **scripted mode** (deterministic 4-phase pipeline) and **agent mode** (OpenHands-powered autonomous QA).
+**AI-driven E2E web application testing pipeline.** Analyzes source code, generates realistic test data, runs browser automation, and correlates results with server logs.
 
-## Quickstart
+## Features
 
-### Install
+- **4-phase pipeline**: Source analysis → Data generation → Browser testing → Log correlation
+- **Dual execution modes**:
+  - `scripted` — Deterministic Playwright-based pipeline (default)
+  - `agent` — OpenHands AI agent delegation (3-conversation workflow)
+- **Source-aware test data**: Extracts form schemas, endpoints, and input validation rules from source code
+- **LLM-powered generation**: Uses Qwen3.6-27B or any OpenAI-compatible model
+- **Structured output**: JSON results with timestamps, test data, and server log correlation
+
+## Quick Start
 
 ```bash
-cd /home/terry/workspace/projects/superweb_testing
-uv venv && source .venv/bin/activate
-uv pip install -e .
-playwright install chromium
+# Install
+pip install -e .
+
+# Run full pipeline
+superweb run --target http://localhost:8081 --source /path/to/source
+
+# Dry run (analysis only)
+superweb run --source /path/to/source --dry-run
+
+# Source analysis only
+superweb analyze --source /path/to/source
+
+# Generate test data from existing schemas
+superweb generate --schemas data/schemas.json
 ```
 
-### Run
-
-The `superweb` CLI can be invoked from **any directory** — only the target source and output paths need to be specified (use absolute paths when running outside the project):
+## CLI Reference
 
 ```bash
-# Start OpenHands (for agent mode only)
-superweb openhands-start
-
-# Scripted mode (deterministic pipeline)
-superweb run --target http://localhost:8081 --source ./my-app --mode scripted
-
-# Agent mode (OpenHands autonomous QA)
-superweb run --target http://localhost:8081 --source ./my-app --mode agent
-
-# Dry run (source analysis only)
-superweb run --target http://localhost:8081 --source ./my-app --dry-run
-
-# From any other directory — use absolute paths (scripted mode)
+# Main pipeline
 superweb run \
   --target http://localhost:8081 \
-  --source /home/terry/workspace/projects/loop_factory \
-  --output /tmp/test_output
+  --source /path/to/source \
+  --output ./superweb_output \
+  --llm-url http://172.25.0.1:8080 \
+  --llm-model Qwen3.6-27B \
+  --variations 3 \
+  --mode scripted \
+  --agent-workspace /path/to/workspace \
+  --agent-timeout 600
 
-# Agent mode from any directory
-superweb run \
-  --target http://localhost:8081 \
-  --source /home/terry/workspace/projects/loop_factory \
-  --output /tmp/test_output \
-  --mode agent
+# OpenHands container management
+superweb openhands-start   # Start container on port 3005
+superweb openhands-stop    # Stop container
+superweb openhands-status  # Check status
 ```
 
 ## Architecture
 
 ```
-┌──────────────┐    ┌───────────────┐    ┌──────────────┐    ┌──────────────┐
-│ source_analyze│───▶│ data_generator│───▶│ test_runner  │───▶│ log_monitor  │
-│ (Phase 1)     │    │ (Phase 2)     │    │ (Phase 3)    │    │ (Phase 4)    │
-└──────────────┘    └───────────────┘    └──────────────┘    └──────────────┘
-       │                    │                    │                    │
-       ▼                    ▼                    ▼                    ▼
-  Form schemas        Test data records    Browser sessions     Error report
-  Routes             Variations          Screenshots           Correlated
-  Validators         Edge cases          Assertions           with timeline
+┌─────────────────────────────────────────────────────────────┐
+│                      Pipeline                               │
+├──────────┬──────────┬────────────┬──────────────────────────┤
+│ Phase 1  │ Phase 2  │ Phase 3    │ Phase 4                  │
+│ Source   │ Data     │ Browser    │ Log Correlation            │
+│ Analysis │ Generation│ Testing   │ & Reporting              │
+├──────────┼──────────┼────────────┼──────────────────────────┤
+│          │          │            │                          │
+│ • AST    │ • LLM    │ • Playwright│ • Server logs           │
+│   parsing│ • Template│ • Headless │ • Error patterns        │
+│ • Form   │   test data│   browser  │ • Timestamp correlation│
+│   extraction│        │ • Screenshots│ • JSON reports         │
+│ • Route  │          │ • Artifact  │                          │
+│   mapping│          │   capture   │                          │
+└──────────┴──────────┴────────────┴──────────────────────────┘
 ```
 
-Agent mode bypasses this pipeline and delegates to OpenHands:
+### Scripted Mode
+Runs the 4-phase pipeline deterministically:
+1. **Analyze** — Scans source code for forms, routes, and input schemas
+2. **Generate** — Creates N test data variations per form via LLM
+3. **Test** — Executes Playwright browser tests with generated data
+4. **Correlate** — Matches server logs to test results
+
+### Agent Mode
+Delegates to OpenHands Agent Server via 3 sequential conversations:
+1. **Analyze** — AI examines source code and generates schemas + test data
+2. **Test** — AI writes and runs Playwright tests
+3. **Report** — AI compiles structured results
+
+## Output
 
 ```
-┌──────────────┐     ┌─────────────────────────────────┐
-│ superweb-cli │────▶│ OpenHands Agent Server (Docker)  │
-│ (orchestrator) │     │ + source code analysis          │
-└──────────────┘     │ + Playwright test generation     │
-                     │ + automated execution             │
-                     │ + server log correlation         │
-                     └─────────────────────────────────┘
+superweb_output/
+├── data/
+│   ├── schemas.json          # Extracted form schemas
+│   ├── test_data.json        # Generated test data
+│   └── test_results.json     # Browser test results
+├── logs/
+│   └── correlation_report.json  # Log correlation analysis
+├── artifacts/              # Screenshots, DOM snapshots
+└── agent_report.json       # Agent mode final report
 ```
-
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `superweb run` | Full pipeline (scripted or agent mode) |
-| `superweb analyze` | Phase 1 only — source analysis |
-| `superweb generate` | Phase 2 only — test data generation |
-| `superweb openhands-start` | Start OpenHands container |
-| `superweb openhands-stop` | Stop OpenHands container |
-| `superweb openhands-status` | Check container status |
-
-### `superweb run` Options
-
-| Flag | Default | Description |
-|------|---------|------------|
-| `--target`, `-t` | (required) | Target webapp URL |
-| `--source`, `-s` | (required) | Local path or git URL |
-| `--output`, `-o` | `./superweb_output` | Output directory |
-| `--mode` | `scripted` | `scripted` or `agent` |
-| `--dry-run` | `False` | Source analysis only |
-| `--llm-url` | `http://172.25.0.1:8080` | LLM endpoint |
-| `--llm-model` | `Qwen3.6-27B` | LLM model name |
-| `--variations`, `-v` | `3` | Test data variations (1-5) |
-| `--config`, `-c` | `None` | Optional config.yaml |
-
-## Pipeline Phases
-
-| # | Module | Input | Output |
-|---|--------|-------|--------|
-| 1 | `source_analyzer` | Target webapp source code | Form schemas (JSON) — fields, types, validators |
-| 2 | `data_generator` | Schemas + LLM | Test data (JSON) — happy path, edge cases, boundary values |
-| 3 | `test_runner` | Test data + Playwright | Browser automation results — form fills, clicks, navigation, screenshots |
-| 4 | `log_monitor` | Server logs + test events | Correlated error report — errors mapped to test timeline |
-
-## Agent Mode (OpenHands)
-
-Agent mode delegates full QA workflow to an OpenHands Agent Server running in Docker:
-
-1. **Source analysis** — agent reads and understands the webapp codebase
-2. **Test generation** — agent creates Playwright scripts for all identified forms/endpoints
-3. **Execution** — agent runs tests against the target webapp
-4. **Reporting** — agent produces a structured JSON report with:
-   - Forms analyzed, test records generated
-   - Pass/fail counts with screenshots on failure
-   - Server log correlation for error diagnosis
-
-### OpenHands Setup
-
-```bash
-# Start the container (also via CLI: superweb openhands-start)
-docker compose up -d
-
-# Check status
-docker logs openhands-server
-```
-
-The container exposes the REST API on `http://localhost:3005`. The client communicates via `/api/v1/app-conversations` endpoints.
 
 ## Requirements
 
-- Python 3.12+
-- Chromium (Playwright)
-- LLM endpoint (local vLLM or compatible OpenAI API)
-- Docker (for agent mode — OpenHands container)
-- Target webapp running and accessible
+- **Python 3.12+**
+- **Docker & Docker Compose** (for agent mode)
+- **Playwright** browsers: `playwright install`
+- **LLM endpoint** (OpenAI-compatible)
 
-## Project Structure
+## Config (Optional)
 
+Create `config.yaml` for persistent settings:
+
+```yaml
+target:
+  url: "http://localhost:8081"
+
+source:
+  root: "~/workspace/projects/loop_factory"
+  form_patterns: ["*.tsx", "*.py"]
+  route_patterns: ["router.ts", "routes.ts"]
+
+llm:
+  base_url: "http://172.25.0.1:8080"
+  model: "Qwen3.6-27B"
+
+browser:
+  headless: true
+  timeout_ms: 30000
+  viewport:
+    width: 1280
+    height: 720
+
+logs:
+  type: "docker"
+  docker_container: "myapp"
+  error_patterns:
+    - "ERROR"
+    - "Exception"
+
+pipeline:
+  data_variations: 3
 ```
-superweb_testing/
-├── compose.yaml              # OpenHands Agent Server Docker config
-├── src/
-│   ├── __init__.py
-│   ├── __main__.py          # Entry point
-│   ├── cli.py                # CLI commands (Typer)
-│   ├── pipeline.py         # Pipeline orchestrator
-│   ├── openhands_client.py # OpenHands REST client
-│   ├── source_analyzer.py  # Phase 1: form schema extraction
-│   ├── data_generator.py   # Phase 2: LLM-powered test data
-│   ├── test_runner.py      # Phase 3: Playwright automation
-│   └── log_monitor.py      # Phase 4: log correlation
-├── tests/
-│   └── __init__.py
-└── test_openhands_connection.py  # Connectivity test script
-```
 
-## Notes
+## License
 
-- Scripted mode runs all 4 phases sequentially in the orchestrator process
-- Agent mode delegates to OpenHands — the orchestrator submits a goal and polls for results
-- Source URLs (`https://` or `git@`) are auto-cloned to the output directory
-- LLM is optional — data generator falls back to template-based generation if unavailable
+MIT

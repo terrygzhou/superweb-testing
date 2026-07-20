@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -86,14 +87,25 @@ class Pipeline:
         host_workspace = Path(__file__).parent.parent / "workspace" / "source"
         host_workspace.parent.mkdir(parents=True, exist_ok=True)
         if host_workspace.exists():
-            shutil.rmtree(host_workspace)
+            for root, dirs, files in os.walk(str(host_workspace), topdown=False):
+                for f in files:
+                    os.unlink(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(str(host_workspace))
         shutil.copytree(
             source_root, host_workspace,
             symlinks=False,
             ignore=shutil.ignore_patterns(".git", "__pycache__", "node_modules", ".venv"),
         )
+        # All paths must be inside the workspace working_dir so the agent can access them.
+        # compose.yaml mounts ./workspace → /opt/workspace_base
+        # working_dir is /opt/workspace_base/source — agent sandbox is confined here.
         container_source = "/opt/workspace_base/source"
-        artifacts_dir = "/opt/workspace_base/artifacts"
+        artifacts_dir = "/opt/workspace_base/source/artifacts"
+        # Ensure the artifacts dir exists so the agent can write to it without sudo
+        host_artifacts = host_workspace / "artifacts"
+        host_artifacts.mkdir(parents=True, exist_ok=True)
 
         console.print(f"[blue]Copied source → {host_workspace}[/blue]")
 
@@ -117,14 +129,17 @@ class Pipeline:
             # ── Conversation 1: Analyze ──────────────────────────────
             console.print("[bold blue]Conversation 1: Analyze source...[/bold blue]")
             analyze_goal = (
-                "You are a QA automation engineer. Analyze the source code at "
-                + container_source + ".\n"
-                "1. Find all forms, API endpoints, and input schemas.\n"
-                "2. Save a JSON file to " + artifacts_dir + "/analysis.json with:\n"
+                f"You are a QA automation engineer. Your working directory is "
+                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
+                "Use your tools (bash, write_file) to complete these steps:\n"
+                "1. Use bash to list files: `ls -la /opt/workspace_base/source/` and `find . -name '*.py' -o -name '*.ts' -o -name '*.tsx' | head -50`\n"
+                "2. Read key source files to identify forms, API endpoints, and input schemas.\n"
+                f"3. Write a JSON file at {artifacts_dir}/analysis.json containing:\n"
                 "   - forms: list of {'name': ..., 'fields': [{'field_name': ..., 'type': ..., 'required': ...}], 'endpoint': ...}\n"
                 "   - endpoints: list of API routes and expected methods\n"
-                "3. Generate 3 realistic test data variations per form, save to "
-                + artifacts_dir + "/test_data.json\n"
+                f"4. Generate 3 realistic test data variations per form, save to {artifacts_dir}/test_data.json\n\n"
+                "Use write_file or bash (echo/cat heredoc) to create the JSON files. "
+                "Make sure each file is valid JSON before finishing."
             )
             conv1_id = client.create_conversation(analyze_goal, container_source)
             console.print(f"  Conversation ID: {conv1_id}")
@@ -184,31 +199,42 @@ class Pipeline:
             exec_status = result3.get("execution_status", "unknown")
             console.print(f"  [green]✓ Report complete (status: {exec_status}, events: {event_count[0]})[/green]")
 
-            # ── Collect artifacts ────────────────────────────────────
+            # ── Copy all artifacts from workspace to output ──────────
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            host_artifacts = host_workspace / "artifacts"
+            if host_artifacts.exists():
+                # Copy entire artifacts directory (analysis.json, test_data.json,
+                # test_results.json, report.json, run_tests.py, screenshots/)
+                dest = self.output_dir / "artifacts"
+                if dest.exists():
+                    for root, dirs, files in os.walk(str(dest), topdown=False):
+                        for f in files:
+                            os.unlink(os.path.join(root, f))
+                        for d in dirs:
+                            os.rmdir(os.path.join(root, d))
+                    os.rmdir(str(dest))
+                shutil.copytree(host_artifacts, dest, symlinks=False)
+                console.print(f"[bold]Artifacts copied: {dest}[/bold]")
+                # Also write agent_report.json as the top-level summary
+                host_report = host_artifacts / "report.json"
+                if host_report.exists():
+                    report_data = json.loads(host_report.read_text())
+                    report_path = self.output_dir / "agent_report.json"
+                    report_path.write_text(
+                        json.dumps(report_data, indent=2, default=str),
+                        encoding="utf-8",
+                    )
+                    console.print(f"[bold]Agent report saved: {report_path}[/bold]")
+                    return report_data
+            # Fallback: combine conversation results
+            combined = {"analysis": result1, "tests": result2, "report": result3}
             report_path = self.output_dir / "agent_report.json"
             report_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Try to read the report from workspace
-            host_report = host_workspace.parent / "artifacts" / "report.json"
-            if host_report.exists():
-                report_data = json.loads(host_report.read_text())
-                report_path.write_text(
-                    json.dumps(report_data, indent=2, default=str), encoding="utf-8"
-                )
-                console.print(f"[bold]Agent report saved: {report_path}[/bold]")
-                return report_data
-            else:
-                # Fallback: combine conversation results
-                combined = {
-                    "analysis": result1,
-                    "tests": result2,
-                    "report": result3,
-                }
-                report_path.write_text(
-                    json.dumps(combined, indent=2, default=str), encoding="utf-8"
-                )
-                console.print(f"[yellow]Report fallback: {report_path}[/yellow]")
-                return combined
+            report_path.write_text(
+                json.dumps(combined, indent=2, default=str), encoding="utf-8"
+            )
+            console.print(f"[yellow]Report fallback: {report_path}[/yellow]")
+            return combined
         finally:
             console.print("[yellow]Stopping OpenHands container...[/yellow]")
             client.stop_server()
