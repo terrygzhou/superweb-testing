@@ -162,14 +162,63 @@ class Pipeline:
             # ── Conversation 2: Test ─────────────────────────────────
             console.print("[bold blue]Conversation 2: Run tests...[/bold blue]")
             test_goal = (
-                "You are a QA automation engineer. Run Playwright tests against "
-                + target_url + ".\n"
-                "1. Read test data from " + artifacts_dir + "/test_data.json\n"
-                "2. Write Playwright scripts that submit each test case to the target webapp.\n"
-                "3. Run the tests and capture screenshots on failure.\n"
-                "4. Save results to " + artifacts_dir + "/test_results.json with:\n"
-                "   - tests: list of {test_name, status: 'passed'|'failed', duration_ms, screenshot: null|path}\n"
-                "   - summary: {total, passed, failed}\n"
+                f"You are a QA automation engineer. Your working directory is "
+                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
+                f"Run tests against {target_url}. Generate comprehensive, traceable test results.\n\n"
+                "## Steps\n"
+                "1. Read analysis from " + artifacts_dir + "/analysis.json to identify forms, endpoints, and source file mappings.\n"
+                "2. Read test data from " + artifacts_dir + "/test_data.json.\n"
+                "3. For each test case, perform the following:\n"
+                "   a. Navigate to the target page URL.\n"
+                "   b. Generate a unique session_id (UUIDv4) for this test run.\n"
+                "   c. Fill form fields or make API requests with the test data.\n"
+                "   d. Capture the HTTP response (status code, headers, body).\n"
+                "   e. Capture frontend console logs (via Playwright page.on('console') or curl --verbose).\n"
+                "   f. If the target app exposes a logs endpoint (e.g. /api/logs, /logs), fetch and capture server-side log output for this request.\n"
+                "   g. Identify the source code file that implements the tested form/endpoint (from analysis.json).\n"
+                "4. Save results to " + artifacts_dir + "/test_results.json.\n\n"
+                "## Output Schema — test_results.json\n"
+                "Each test entry must contain ALL of these fields:\n"
+                '{\n'
+                "  \"tests\": [\n"
+                "    {\n"
+                "      \"test_name\": \"string (e.g. CreateProjectForm/Standard English Project)\",\n"
+                '      \"status\": "passed" | "failed" | "error" | "skipped",\n'
+                "      \"duration_ms\": number,\n"
+                "      \"session_id\": \"UUIDv4 string\",\n"
+                "      \"page_url\": \"full URL navigated to (e.g. http://host.docker.internal:19829/project/create)\",\n"
+                '      \"test_data\": { field_name: value, ... },\n'
+                '      \"action_performed\": "HTTP method + path or browser action description (e.g. POST /api/projects, filled and submitted CreateProjectForm)\",\n'
+                '      \"source_file\": "relative path to source file that implements this form/endpoint (e.g. src/forms/create_project.tsx or backend/api/projects.py)",\n'
+                '      \"http_response\": {\n'
+                '        "status_code": number | null,\n'
+                '        "headers": { key: value, ... } | null,\n'
+                '        "body_preview": "first 500 chars of response body or null"\n'
+                "      },\n"
+                '      \"frontend_logs\": [\n'
+                '        { "level": "log|warn|error", "message": "string" }\n'
+                "      ],\n"
+                '      \"server_logs\": [\n'
+                '        { "timestamp": "ISO string", "level": "INFO|WARN|ERROR", "message": "string" }\n'
+                "      ],\n"
+                '      \"error\": {\n'
+                '        "error_code": "string (HTTP status, exception type, or null if passed)",\n'
+                '        "exception_description": "stack trace or error message, or null",\n'
+                '        "frontend_error": "console.error output or UI error text, or null",\n'
+                '        "server_error": "server-side error from logs or response, or null"\n'
+                "      },\n"
+                '      \"screenshot": "relative path to screenshot on failure, or null"\n'
+                "    }\n"
+                "  ],\n"
+                "  \"summary\": { \"total\": number, \"passed\": number, \"failed\": number, \"skipped\": number }\n"
+                "}\n\n"
+                "IMPORTANT:\n"
+                "- Every test entry MUST include session_id, page_url, test_data, action_performed, source_file, http_response, frontend_logs, server_logs, and error fields.\n"
+                "- For passed tests, set error fields to null.\n"
+                "- For failed tests, populate ALL error sub-fields with actual captured data.\n"
+                "- Make the test_data object contain the exact values submitted (redact secrets if any).\n"
+                "- Use bash/curl or write a Python test script to execute tests. Do NOT use Playwright if unavailable — curl/fetch is acceptable.\n"
+                "- Verify the JSON is valid before saving."
             )
             conv2_id = client.create_conversation(test_goal, container_source)
             console.print(f"  Conversation ID: {conv2_id}")
@@ -182,14 +231,84 @@ class Pipeline:
             # ── Conversation 3: Report ────────────────────────────────
             console.print("[bold blue]Conversation 3: Generate report...[/bold blue]")
             report_goal = (
-                "You are a QA automation engineer. Generate a final report.\n"
-                "1. Read " + artifacts_dir + "/analysis.json and " + artifacts_dir + "/test_results.json\n"
-                "2. Compile a structured report and save to " + artifacts_dir + "/report.json with:\n"
-                "   - forms_analyzed: count\n"
-                "   - test_records: count\n"
-                "   - tests_passed: count\n"
-                "   - tests_failed: count\n"
-                "   - summary: narrative of findings\n"
+                f"You are a QA automation engineer. Your working directory is "
+                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
+                "Generate a comprehensive, traceable test report.\n\n"
+                "## Steps\n"
+                "1. Read " + artifacts_dir + "/analysis.json for form/endpoint/source mapping.\n"
+                "2. Read " + artifacts_dir + "/test_results.json for per-test results.\n"
+                "3. Read " + artifacts_dir + "/test_data.json for test input data.\n"
+                "4. Cross-reference all data sources and compile a full report.\n"
+                "5. Save to " + artifacts_dir + "/report.json.\n\n"
+                "## Output Schema — report.json\n"
+                '{\n'
+                '  "report_metadata": {\n'
+                '    "generated_at": "ISO 8601 timestamp",\n'
+                '    "target_url": "string",\n'
+                '    "source_root": "path to analyzed source",\n'
+                '    "pipeline_mode": "agent"\n'
+                "  },\n"
+                '  "summary": {\n'
+                '    "forms_analyzed": number,\n'
+                '    "test_records": number,\n'
+                '    "tests_passed": number,\n'
+                '    "tests_failed": number,\n'
+                '    "tests_skipped": number,\n'
+                '    "pass_rate": percentage (0-100),\n'
+                '    "total_duration_ms": number,\n'
+                '    "avg_duration_ms": number\n'
+                "  },\n"
+                '  "test_details": [\n'
+                "    {\n"
+                '      "test_name": "string",\n'
+                '      "status": "passed" | "failed" | "error" | "skipped",\n'
+                '      "duration_ms": number,\n'
+                '      "session_id": "UUIDv4",\n'
+                '      "page_url": "full URL",\n'
+                '      "test_data": { field: value, ... },\n'
+                '      "action_performed": "string",\n'
+                '      "source_file": "relative path",\n'
+                '      "http_response": {\n'
+                '        "status_code": number | null,\n'
+                '        "headers": { ... } | null,\n'
+                '        "body_preview": "string | null"\n'
+                "      },\n"
+                '      "frontend_logs": [{ "level": "string", "message": "string" }],\n'
+                '      "server_logs": [{ "timestamp": "string", "level": "string", "message": "string" }],\n'
+                '      "error": {\n'
+                '        "error_code": "string | null",\n'
+                '        "exception_description": "string | null",\n'
+                '        "frontend_error": "string | null",\n'
+                '        "server_error": "string | null"\n'
+                "      },\n"
+                '      "screenshot": "path | null"\n'
+                "    }\n"
+                "  ],\n"
+                '  "failures": [\n'
+                "    {\n"
+                '      "test_name": "string",\n'
+                '      "error_code": "string",\n'
+                '      "exception_description": "string",\n'
+                '      "frontend_error": "string | null",\n'
+                '      "server_error": "string | null",\n'
+                '      "session_id": "UUIDv4",\n'
+                '      "source_file": "string"\n'
+                "    }\n"
+                "  ],\n"
+                '  "source_coverage": {\n'
+                '    "files_tested": ["list of unique source files tested"],\n'
+                '    "endpoints_tested": ["list of unique API endpoints tested"],\n'
+                '    "forms_tested": ["list of unique form names tested"]\n'
+                "  },\n"
+                '  "narrative_summary": "string — concise summary of findings, key regressions, and recommendations"\n'
+                "}\n\n"
+                "## Requirements\n"
+                "- ALL test entries from test_results.json must appear in test_details.\n"
+                "- Cross-reference analysis.json to fill in source_file mappings where test_results.json is incomplete.\n"
+                "- failures array lists only tests with status 'failed' or 'error'.\n"
+                "- source_coverage aggregates unique values from all test entries.\n"
+                "- narrative_summary must be 150-500 words, focusing on pass rate, failure patterns, and actionable recommendations.\n"
+                "- Verify the JSON is valid before saving."
             )
             conv3_id = client.create_conversation(report_goal, container_source)
             console.print(f"  Conversation ID: {conv3_id}")
