@@ -53,25 +53,61 @@ superweb openhands-status  # Check status
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Pipeline                               │
-├──────────┬──────────┬────────────┬──────────────────────────┤
-│ Phase 1  │ Phase 2  │ Phase 3    │ Phase 4                  │
-│ Source   │ Data     │ Browser    │ Log Correlation            │
-│ Analysis │ Generation│ Testing   │ & Reporting              │
-├──────────┼──────────┼────────────┼──────────────────────────┤
-│          │          │            │                          │
-│ • AST    │ • LLM    │ • Playwright│ • Server logs           │
-│   parsing│ • Template│ • Headless │ • Error patterns        │
-│ • Form   │   test data│   browser  │ • Timestamp correlation│
-│   extraction│        │ • Screenshots│ • JSON reports         │
-│ • Route  │          │ • Artifact  │                          │
-│   mapping│          │   capture   │                          │
-└──────────┴──────────┴────────────┴──────────────────────────┘
+```mermaid
+graph LR
+    subgraph CLI["CLI Layer"]
+        USER[("User")]
+        CLI_CLI["cli.py\nTyper CLI"]
+    end
+
+    subgraph CORE["Core Pipeline"]
+        PIPE["pipeline.py\nOrchestrator\n(scripted | agent)"]
+    end
+
+    subgraph SCRIPTED["Scripted Mode"]
+        P1["P1: source_analyzer.py\nForm/Route Extraction"]
+        P2["P2: data_generator.py\nLLM Test Data Gen"]
+        P3["P3: test_runner.py\nPlaywright E2E"]
+        P4["P4: log_monitor.py\nLog Correlation"]
+    end
+
+    subgraph AGENT["Agent Mode"]
+        OH_CLI["openhands_client.py\nREST Client"]
+        OH_SRV["OpenHands Agent Server\n(Docker :3005)"]
+        CONV["3 Conversations\n1.Analyze → schemas\n2.Test → results\n3.Report → JSON/MD"]
+    end
+
+    subgraph EXT["External Systems"]
+        LLM["LLM Endpoint\n(vLLM / OpenAI)"]
+        BROWSER["Playwright\nChromium"]
+        TARGET[/"Target Web App"/]
+        LOGS[/"Server Logs\n(Docker/file/journalctl)"/]
+    end
+
+    USER -->|"superweb run"| CLI_CLI
+    CLI_CLI -->|"delegates"| PIPE
+
+    PIPE -->|"mode=scripted"| P1
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+
+    PIPE -->|"mode=agent"| OH_CLI
+    OH_CLI -->|"REST API"| OH_SRV
+    OH_SRV --> CONV
+
+    P1 -->|"reads source"| TARGET
+    P2 -->|"schema → test data"| LLM
+    P3 -->|"headless browser"| BROWSER
+    P3 -->|"navigate/fill/submit"| TARGET
+    P4 -->|"error patterns"| LOGS
+
+    OH_SRV -->|"sandbox testing"| TARGET
+    CONV -->|"test data gen"| LLM
 ```
 
 ### Scripted Mode
+
 Runs the 4-phase pipeline deterministically:
 1. **Analyze** — Scans source code for forms, routes, and input schemas
 2. **Generate** — Creates N test data variations per form via LLM
