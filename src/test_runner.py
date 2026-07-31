@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 
@@ -99,7 +98,7 @@ class TestRunner:
                 await page.goto(self.target_url, timeout=self.timeout_ms)
                 step.status = "passed"
                 step.duration_ms = int((time.time() - start) * 1000)
-            except Exception as e:
+            except PlaywrightError as e:
                 step.status = "failed"
                 step.details = str(e)
                 result.steps.append(step)
@@ -112,7 +111,7 @@ class TestRunner:
             try:
                 await self._fill_form(page, test_data)
                 step.status = "passed"
-            except Exception as e:
+            except PlaywrightError as e:
                 step.status = "failed"
                 step.details = str(e)
             result.steps.append(step)
@@ -122,7 +121,7 @@ class TestRunner:
             try:
                 await self._submit_form(page)
                 step.status = "passed"
-            except Exception as e:
+            except PlaywrightError as e:
                 step.status = "failed"
                 step.details = str(e)
             result.steps.append(step)
@@ -132,7 +131,7 @@ class TestRunner:
             try:
                 await self._verify_page(page)
                 step.status = "passed"
-            except Exception as e:
+            except PlaywrightError as e:
                 step.status = "failed"
                 step.details = str(e)
             result.steps.append(step)
@@ -143,7 +142,7 @@ class TestRunner:
                 nav_results = await self._explore_navigation(page)
                 step.status = "passed"
                 step.details = f"Clicked {len(nav_results)} elements, visited {len(nav_results)} pages"
-            except Exception as e:
+            except PlaywrightError as e:
                 step.status = "failed"
                 step.details = str(e)
             result.steps.append(step)
@@ -221,7 +220,7 @@ class TestRunner:
                     element = await page.locator(selector).first
                     if await element.count() > 0:
                         return element
-            except Exception:
+            except PlaywrightError:
                 continue
 
         # Fallback: find by placeholder or aria-label
@@ -229,7 +228,7 @@ class TestRunner:
             element = await page.locator(f'[placeholder="{field_name}"]').first
             if await element.count() > 0:
                 return element
-        except Exception:
+        except PlaywrightError:
             pass
 
         return None
@@ -283,8 +282,8 @@ class TestRunner:
                 if errors:
                     text = await errors[0].text_content()
                     raise AssertionError(f"Error detected: {text}")
-            except Exception as e:
-                if "Error detected" in str(e):
+            except (PlaywrightError, AssertionError) as e:
+                if isinstance(e, AssertionError):
                     raise
                 continue
 
@@ -327,7 +326,7 @@ class TestRunner:
                 })
                 visited.add(current_url)
 
-            except Exception:
+            except (PlaywrightError, TimeoutError):
                 # Element might have disappeared or navigation failed — continue
                 continue
 

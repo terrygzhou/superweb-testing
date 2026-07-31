@@ -9,14 +9,12 @@ Uses the OpenHands agent to:
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import shutil
 import sys
 import time
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
+import json
 import httpx
 from rich.console import Console
 
@@ -26,7 +24,7 @@ console = Console()
 TARGET_URL = "http://pop-os:80"
 API_BASE = "http://pop-os:8011"  # FastAPI backend
 CRM_PROJECT_NAME = "crm_test"
-CRM_SPEC = """This is an app allowing me to manage my contacts (or customers), including their contact details, emails, and meeting appointments with me in my Google Calendar: terrygzhou@gmail.com
+CRM_SPEC = """This is an app allowing me to manage my contacts (or customers), including their contact details, emails, and meeting appointments with me in my Google Calendar: ${USER_EMAIL}
 
 Core behaviour:
 - Create, update contacts

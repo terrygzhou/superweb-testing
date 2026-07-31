@@ -5,11 +5,9 @@ Compensates for missing SDK by polling events and using REST file operations.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import time
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import httpx
 from rich.console import Console
@@ -103,7 +101,7 @@ class OpenHandsClient:
                 resp = self._client.get("/health", timeout=5.0)
                 if resp.status_code == 200:
                     health_ok = True
-            except Exception:
+            except httpx.RequestError:
                 pass
 
             if health_ok:
@@ -111,7 +109,7 @@ class OpenHandsClient:
                     conv_resp = self._client.get("/api/conversations", timeout=5.0)
                     if conv_resp.status_code in (200, 422):
                         return
-                except Exception:
+                except httpx.RequestError:
                     pass
 
             if i < retries - 1:
