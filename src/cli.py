@@ -35,6 +35,7 @@ def resolve_source(source: str, output: str) -> str:
 
 @app.command()
 def run(
+    *,
     target: str = typer.Option(
         "", "--target", "-t",
         help="URL of the target webapp (e.g. http://localhost:8081)",
@@ -80,7 +81,7 @@ def run(
         600, "--agent-timeout",
         help="Agent timeout in seconds (agent mode only, default 600)",
     ),
-):
+) -> None:
     """Run the full testing pipeline against a webapp."""
     async def run_main():
         import gc
@@ -131,6 +132,7 @@ def run(
 
 @app.command()
 def analyze(
+    *,
     source: str = typer.Option(
         "", "--source", "-s",
         help="Local path or git URL of the webapp source code",
@@ -142,7 +144,7 @@ def analyze(
     config: Path = typer.Option(
         None, "--config", "-c",
     ),
-):
+) -> None:
     """Phase 1 only: Analyze source code for form schemas."""
     if not source:
         console.print("[red]Error: --source is required[/red]")
@@ -171,6 +173,7 @@ def analyze(
 
 @app.command()
 def generate(
+    *,
     schemas_file: Path = typer.Option(
         Path("data/schemas.json"), "--schemas",
         help="Path to schemas.json",
@@ -188,7 +191,7 @@ def generate(
     variations: int = typer.Option(
         3, "--variations", "-v",
     ),
-):
+) -> None:
     """Phase 2 only: Generate test data from schemas."""
     async def main():
         from src.data_generator import DataGenerator
@@ -219,21 +222,21 @@ def generate(
 
 
 @app.command(name="openhands-start")
-def openhands_start():
+def openhands_start() -> None:
     """Start the OpenHands Agent Server container."""
     subprocess.run(["docker", "compose", "up", "-d"], check=True)
     console.print("[green]OpenHands container started on port 3005[/green]")
 
 
 @app.command(name="openhands-stop")
-def openhands_stop():
+def openhands_stop() -> None:
     """Stop the OpenHands Agent Server container."""
     subprocess.run(["docker", "compose", "down"], check=False)
     console.print("[yellow]OpenHands container stopped[/yellow]")
 
 
 @app.command(name="openhands-status")
-def openhands_status():
+def openhands_status() -> None:
     """Check OpenHands container status."""
     result = subprocess.run(
         ["docker", "compose", "ps", "--format", "json"],
@@ -245,7 +248,7 @@ def openhands_status():
         console.print("[red]OpenHands container not running[/red]")
 
 
-def main():
+def main() -> None:
     app()
 
 
