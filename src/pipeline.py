@@ -9,9 +9,16 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any
+
 import yaml
 from rich.console import Console
 from rich.table import Table
+
+from .constants import (
+    DEFAULT_LLM_BASE_URL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_OPENHANDS_LLM_MODEL,
+)
 
 from src.source_analyzer import SourceAnalyzer, FormSchema
 from src.data_generator import DataGenerator, TestDataset
@@ -87,12 +94,7 @@ class Pipeline:
         host_workspace = Path(__file__).parent.parent / "workspace" / "source"
         host_workspace.parent.mkdir(parents=True, exist_ok=True)
         if host_workspace.exists():
-            for root, dirs, files in os.walk(str(host_workspace), topdown=False):
-                for f in files:
-                    os.unlink(os.path.join(root, f))
-                for d in dirs:
-                    os.rmdir(os.path.join(root, d))
-            os.rmdir(str(host_workspace))
+            shutil.rmtree(str(host_workspace))
         shutil.copytree(
             source_root, host_workspace,
             symlinks=False,
@@ -114,8 +116,8 @@ class Pipeline:
             base_url="http://localhost:3005",
             compose_file=compose_path,
             timeout=self.agent_timeout,
-            model="openai/Qwen3.6-27B",
-            base_llm_url="http://172.25.0.1:8080",
+            model=DEFAULT_OPENHANDS_LLM_MODEL,
+            base_llm_url=DEFAULT_LLM_BASE_URL,
         )
 
         console.print("[bold blue]Agent mode: Starting OpenHands container...[/bold blue]")
@@ -389,12 +391,7 @@ class Pipeline:
                 # test_results.json, report.json, run_tests.py, screenshots/)
                 dest = self.output_dir / "artifacts"
                 if dest.exists():
-                    for root, dirs, files in os.walk(str(dest), topdown=False):
-                        for f in files:
-                            os.unlink(os.path.join(root, f))
-                        for d in dirs:
-                            os.rmdir(os.path.join(root, d))
-                    os.rmdir(str(dest))
+                    shutil.rmtree(str(dest))
                 shutil.copytree(host_artifacts, dest, symlinks=False)
                 console.print(f"[bold]Artifacts copied: {dest}[/bold]")
                 # Also write agent_report.json as the top-level summary
@@ -507,8 +504,8 @@ class Pipeline:
         n_variations = self.config.get("pipeline", {}).get("data_variations", 3)
 
         generator = DataGenerator(
-            llm_base_url=llm_cfg.get("base_url", "http://172.25.0.1:8080"),
-            model=llm_cfg.get("model", "Qwen3.6-27B"),
+            llm_base_url=llm_cfg.get("base_url", DEFAULT_LLM_BASE_URL),
+            model=llm_cfg.get("model", DEFAULT_LLM_MODEL),
             n_variations=n_variations,
         )
 

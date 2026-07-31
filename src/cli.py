@@ -9,6 +9,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from .constants import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
+
 console = Console()
 app = typer.Typer(
     name="superweb",
@@ -50,11 +52,11 @@ def run(
         help="Optional config.yaml (defaults to self-contained)",
     ),
     llm_url: str = typer.Option(
-        "http://172.25.0.1:8080", "--llm-url",
+        DEFAULT_LLM_BASE_URL, "--llm-url",
         help="LLM endpoint base URL (OpenAI-compatible)",
     ),
     llm_model: str = typer.Option(
-        "Qwen3.6-27B", "--llm-model",
+        DEFAULT_LLM_MODEL, "--llm-model",
         help="LLM model name",
     ),
     variations: int = typer.Option(
@@ -178,10 +180,10 @@ def generate(
         help="Output directory for test data",
     ),
     llm_url: str = typer.Option(
-        "http://172.25.0.1:8080", "--llm-url",
+        DEFAULT_LLM_BASE_URL, "--llm-url",
     ),
     llm_model: str = typer.Option(
-        "Qwen3.6-27B", "--llm-model",
+        DEFAULT_LLM_MODEL, "--llm-model",
     ),
     variations: int = typer.Option(
         3, "--variations", "-v",

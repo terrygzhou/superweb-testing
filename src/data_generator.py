@@ -9,6 +9,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
+from .constants import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
+
 
 class TestRecord(BaseModel):
     """A single test data record for one form."""
@@ -62,8 +64,8 @@ class DataGenerator:
 
     def __init__(
         self,
-        llm_base_url: str = "http://172.25.0.1:8080",
-        model: str = "Qwen3.6-27B",
+        llm_base_url: str = DEFAULT_LLM_BASE_URL,
+        model: str = DEFAULT_LLM_MODEL,
         n_variations: int = 3,
     ):
         self.llm_base_url = llm_base_url

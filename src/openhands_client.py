@@ -12,6 +12,8 @@ from typing import Callable, Optional
 import httpx
 from rich.console import Console
 
+from .constants import DEFAULT_LLM_BASE_URL, DEFAULT_OPENHANDS_LLM_MODEL
+
 console = Console()
 
 
@@ -45,8 +47,8 @@ class OpenHandsClient:
         base_url: str = "http://localhost:3005",
         compose_file: Optional[str] = None,
         timeout: int = 600,
-        model: str = "openai/Qwen3.6-27B",
-        base_llm_url: str = "http://172.25.0.1:8080",
+        model: str = DEFAULT_OPENHANDS_LLM_MODEL,
+        base_llm_url: str = DEFAULT_LLM_BASE_URL,
     ):
         self.base_url = base_url
         self.compose_file = compose_file
