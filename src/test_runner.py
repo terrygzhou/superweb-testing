@@ -59,12 +59,14 @@ class TestRunner:
 
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
+        self._playwright = None  # type: ignore[assignment]
+        self._pw_ctx = None      # async_playwright context manager
 
     async def start(self):
         """Initialize browser."""
-        pw = await async_playwright().__aenter__()
-        self._playwright = pw
-        self._browser = await pw.chromium.launch(headless=self.headless)
+        self._pw_ctx = async_playwright()
+        self._playwright = await self._pw_ctx.__aenter__()
+        self._browser = await self._playwright.chromium.launch(headless=self.headless)
         context_opts: dict[str, Any] = {
             "viewport": self.viewport,
             "ignore_https_errors": True,
@@ -74,11 +76,13 @@ class TestRunner:
         self._context = await self._browser.new_context(**context_opts)
 
     async def close(self):
-        """Shutdown browser."""
+        """Shutdown browser and Playwright server."""
         if self._context:
             await self._context.close()
         if self._browser:
             await self._browser.close()
+        if self._pw_ctx:
+            await self._pw_ctx.__aexit__(None, None, None)
 
     async def run_form_tests(
         self, form_name: str, test_data: dict[str, Any], variation: int

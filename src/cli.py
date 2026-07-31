@@ -81,6 +81,7 @@ def run(
 ):
     """Run the full testing pipeline against a webapp."""
     async def run_main():
+        import gc
         from src.pipeline import Pipeline
 
         if not target:
@@ -113,8 +114,17 @@ def run(
 
         report = await p.run(source_override=source_path, target_override=target)
         console.print(f"\n[bold]Pipeline complete.[/bold] Report: {output}/report/correlation_report.json")
+        # Force GC before asyncio.run() closes the event loop to avoid
+        # "RuntimeError: Event loop is closed" on Playwright subprocess __del__
+        gc.collect()
 
     asyncio.run(run_main())
+    # Force GC AFTER the loop closes. Playwright browser is already shut down
+    # so there's no real work — this just drains the finalizer queue without
+    # the loop, which suppresses the benign "Event loop is closed" RuntimeError
+    # (CPython issue 40674).
+    import gc
+    gc.collect()
 
 
 @app.command()

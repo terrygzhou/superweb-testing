@@ -86,6 +86,12 @@ _TYPE_MAP: dict[str, str] = {
 class SourceAnalyzer:
     """Scan web app source code to extract form schemas, routes, and validators."""
 
+    # Directories to always skip
+    SKIP_DIRS = {
+        ".venv", "venv", "node_modules", "__pycache__", ".git",
+        ".cache", ".mypy_cache", "site-packages", "dist-info",
+    }
+
     def __init__(self, source_root: str, form_patterns: list[str] | None = None):
         self.source_root = Path(source_root).expanduser().resolve()
         self.form_patterns = form_patterns or [
@@ -95,12 +101,14 @@ class SourceAnalyzer:
             "**/validators.py",
             "**/*_form.py",
             "**/schema*.py",
+            "**/model*.py",
         ]
         self.route_patterns = [
             "**/routes.py",
             "**/api.py",
             "**/endpoints.py",
             "**/*_router.py",
+            "**/router.py",
         ]
 
     def analyze(self) -> SourceAnalysisResult:
@@ -124,10 +132,20 @@ class SourceAnalyzer:
         forms: list[FormSchema] = []
 
         for pattern in self.form_patterns:
-            for filepath in self.source_root.glob(pattern):
+            for filepath in self._filtered_glob(pattern):
                 forms.extend(self._parse_form_file(filepath))
 
         return forms
+
+    def _filtered_glob(self, pattern: str) -> list[Path]:
+        """Glob but skip virtualenv, node_modules, cache dirs."""
+        results: list[Path] = []
+        for p in self.source_root.glob(pattern):
+            # Check if any parent component is in skip list
+            parts = p.relative_to(self.source_root).parts
+            if not any(part in self.SKIP_DIRS for part in parts):
+                results.append(p)
+        return results
 
     def _parse_form_file(self, filepath: Path) -> list[FormSchema]:
         """Parse a single Python file for form definitions."""
@@ -157,9 +175,9 @@ class SourceAnalyzer:
         """Parse Pydantic BaseModel/Schema definitions."""
         forms: list[FormSchema] = []
 
-        # Find class definitions that inherit from BaseModel/Schema
+        # Find class definitions that inherit from BaseModel/Schema/Model (exact match)
         class_pattern = re.compile(
-            r"class\s+(\w+)\s*\([^)]*(?:BaseModel|Schema|Model)[^)]*\)\s*:"
+            r"class\s+(\w+)\s*\(\s*(BaseModel|Schema|Model)\s*[,\)]"
         )
 
         for match in class_pattern.finditer(content):
@@ -311,17 +329,19 @@ class SourceAnalyzer:
     ) -> list[str]:
         """Extract field definitions from a class body."""
         result: list[str] = []
-        brace_depth = 0
 
-        for line in lines:
+        # Start scanning from the line AFTER the class header
+        start_line = content[:after_pos].count("\n") + 1
+
+        for line in lines[start_line:]:
             stripped = line.strip()
             if not stripped or stripped.startswith("#") or stripped.startswith("def "):
                 if result and not stripped:
                     break  # empty line after fields = end of block
                 continue
 
-            # Check for field assignments
-            if re.match(r"\s+\w+\s*[=:]", stripped) or re.match(r"\s+\w+\s*:", stripped):
+            # Check for field assignments (match against stripped line)
+            if re.match(r"\w+\s*[=:]", stripped):
                 result.append(stripped)
             elif stripped.startswith("class ") or (stripped.startswith("def ") and result):
                 break
@@ -374,7 +394,7 @@ class SourceAnalyzer:
         routes: list[RouteInfo] = []
 
         for pattern in self.route_patterns:
-            for filepath in self.source_root.glob(pattern):
+            for filepath in self._filtered_glob(pattern):
                 routes.extend(self._parse_routes_file(filepath))
 
         return routes
