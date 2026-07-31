@@ -14,7 +14,10 @@ services:
       # Docker socket for sandbox spawning
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - LLM_BASE_URL=http://172.25.0.1:8080
+      # Use host.docker.internal to reach host-port-mapped services (sglang:8080)
+      # Container is on loop_factory_loop_factory_network (not openhands-network)
+      # so host-gateway is the only path to the LLM on the host.
+      - LLM_BASE_URL=http://host.docker.internal:8080
       - LLM_MODEL=Qwen3.6-27B
       - SANDBOX_USER_ID=${SANDBOX_USER_ID:-1000}
       - AGENT_SERVER_IMAGE_REPOSITORY=ghcr.io/openhands/agent-server
@@ -23,8 +26,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - openhands-network
+      loop_factory_network:
 
 networks:
-  openhands-network:
-    driver: bridge
+  # No custom network — uses loop_factory's network directly
+  loop_factory_network:
+    external: true
+    name: loop_factory_loop_factory_network

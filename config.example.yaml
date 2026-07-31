@@ -2,7 +2,7 @@
 
 # LLM endpoint for test data generation
 llm:
-  base_url: "http://172.25.0.1:8080"
+  base_url: "http://localhost:8080"
   model: "Qwen3.6-27B"
   api_key: "not-needed"  # local LLM
 
