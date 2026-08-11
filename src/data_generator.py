@@ -40,8 +40,8 @@ Requirements:
   * Variation 1: Happy path (all required fields, valid data)
   * Variation 2: Boundary values (min/max lengths, limits)
   * Variation 3: Special characters (unicode, emojis, SQL injection attempts)
-- For email fields: use format "test{N}@example.com"
-- For password fields: use format "SecurePass{N}!"
+- For email fields: use format "test<variation_num>@example.com" where <variation_num> is the variation index
+- For password fields: use format "SecurePass<variation_num>!" where <variation_num> is the variation index
 - For numeric fields: include 0, negative, very large numbers
 - For optional fields: sometimes omit, sometimes include
 
@@ -121,7 +121,8 @@ class DataGenerator:
                 for field in fields:
                     fname = field.get("name", "field")
                     ftype = field.get("type", "text")
-                    data[fname] = self._fallback_value(ftype, var)
+                    choices = field.get("choices", [])
+                    data[fname] = self._fallback_value(ftype, var, choices)
 
                 notes = f"Variation {var}: {'happy path' if var == 1 else 'boundary' if var == 2 else 'special chars'}"
                 records.append(
@@ -138,7 +139,7 @@ class DataGenerator:
             metadata={"generator": "fallback", "n_variations": self.n_variations},
         )
 
-    def _fallback_value(self, field_type: str, variation: int) -> Any:
+    def _fallback_value(self, field_type: str, variation: int, choices: list[str] | None = None) -> Any:
         """Generate a fallback value based on field type and variation."""
         values = {
             "text": ["Test User", "Tést Usér!", "T" * 255],
@@ -146,12 +147,19 @@ class DataGenerator:
             "password": ["SecurePass1!", "Password{}!".format("X" * 20), "p"],
             "number": [42, 999999999, -1],
             "date": ["2025-01-15", "2099-12-31", "1970-01-01"],
-            "select": ["option1", "option2", ""],
+            "select": [],
             "textarea": ["A comment", "A" * 500, ""],
             "checkbox": [True, False, True],
             "file": ["test.txt", "", None],
         }
         vals = values.get(field_type, ["value", "value2", "val"])
+
+        # For select fields, prefer actual choices from the schema
+        if field_type == "select" and choices:
+            vals = choices + [choices[0]] * max(0, 3 - len(choices))
+        elif field_type == "select" and not choices:
+            vals = ["option1", "option2", ""]
+
         return vals[variation - 1] if variation <= len(vals) else vals[0]
 
     def _parse_response(self, response_text: str) -> list[TestRecord]:

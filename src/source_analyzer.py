@@ -87,7 +87,12 @@ class SourceAnalyzer:
         ".cache", ".mypy_cache", "site-packages", "dist-info",
     }
 
-    def __init__(self, source_root: str, form_patterns: list[str] | None = None):
+    def __init__(
+        self,
+        source_root: str,
+        form_patterns: list[str] | None = None,
+        route_patterns: list[str] | None = None,
+    ):
         self.source_root = Path(source_root).expanduser().resolve()
         self.form_patterns = form_patterns or [
             "**/forms.py",
@@ -98,7 +103,7 @@ class SourceAnalyzer:
             "**/schema*.py",
             "**/model*.py",
         ]
-        self.route_patterns = [
+        self.route_patterns = route_patterns or [
             "**/routes.py",
             "**/api.py",
             "**/endpoints.py",

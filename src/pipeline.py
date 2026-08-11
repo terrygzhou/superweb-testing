@@ -483,6 +483,7 @@ class Pipeline:
         analyzer = SourceAnalyzer(
             source_root=source_root,
             form_patterns=form_patterns if form_patterns else None,
+            route_patterns=route_patterns if route_patterns else None,
         )
         result = analyzer.analyze()
 

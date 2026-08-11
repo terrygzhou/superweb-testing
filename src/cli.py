@@ -87,11 +87,11 @@ def run(
         import gc
         from src.pipeline import Pipeline
 
-        if not target:
-            console.print("[red]Error: --target URL is required[/red]")
-            raise SystemExit(1)
         if not source:
             console.print("[red]Error: --source path/git URL is required[/red]")
+            raise SystemExit(1)
+        if not dry_run and not target:
+            console.print("[red]Error: --target URL is required (unless --dry-run)[/red]")
             raise SystemExit(1)
 
         source_path = resolve_source(source, output)
@@ -99,7 +99,7 @@ def run(
         p = Pipeline(
             config_path=str(config) if config else None,
             output_dir=output,
-            target_url=target,
+            target_url=target or "",
             source_root=source_path,
             llm_url=llm_url,
             llm_model=llm_model,
@@ -196,7 +196,15 @@ def generate(
     async def main():
         from src.data_generator import DataGenerator
 
-        schemas = __import__("json").loads(schemas_file.read_text())
+        raw = __import__("json").loads(schemas_file.read_text())
+        # Handle SourceAnalysisResult format (forms/routes/summary) vs flat list
+        if isinstance(raw, list):
+            schemas = raw
+        elif isinstance(raw, dict) and "forms" in raw:
+            schemas = raw["forms"]
+        else:
+            console.print("[red]Error: schemas file must contain a list of forms or {forms: [...]} structure[/red]")
+            raise SystemExit(1)
 
         gen = DataGenerator(
             llm_base_url=llm_url,
@@ -221,17 +229,28 @@ def generate(
 # --- OpenHands container management ---
 
 
+# Resolve compose.yaml relative to the project root (same directory as this file).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_COMPOSE_FILE = _PROJECT_ROOT / "compose.yaml"
+
+
 @app.command(name="openhands-start")
 def openhands_start() -> None:
     """Start the OpenHands Agent Server container."""
-    subprocess.run(["docker", "compose", "up", "-d"], check=True)
+    subprocess.run(
+        ["docker", "compose", "-f", str(_COMPOSE_FILE), "up", "-d"],
+        check=True,
+    )
     console.print("[green]OpenHands container started on port 3005[/green]")
 
 
 @app.command(name="openhands-stop")
 def openhands_stop() -> None:
     """Stop the OpenHands Agent Server container."""
-    subprocess.run(["docker", "compose", "down"], check=False)
+    subprocess.run(
+        ["docker", "compose", "-f", str(_COMPOSE_FILE), "down"],
+        check=False,
+    )
     console.print("[yellow]OpenHands container stopped[/yellow]")
 
 
@@ -239,8 +258,8 @@ def openhands_stop() -> None:
 def openhands_status() -> None:
     """Check OpenHands container status."""
     result = subprocess.run(
-        ["docker", "compose", "ps", "--format", "json"],
-        capture_output=True, text=True
+        ["docker", "compose", "-f", str(_COMPOSE_FILE), "ps", "--format", "json"],
+        capture_output=True, text=True,
     )
     if result.returncode == 0:
         console.print(result.stdout)
