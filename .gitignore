@@ -26,3 +26,6 @@ config.yaml
 # OpenHands workspace & cache
 workspace/
 ~/.openhands/
+
+# Agent working progress
+handoff.md
