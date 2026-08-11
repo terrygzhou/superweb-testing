@@ -29,3 +29,7 @@ workspace/
 
 # Agent working progress
 handoff.md
+
+# Reports & codegraph
+report/
+.codegraph/
