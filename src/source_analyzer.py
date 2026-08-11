@@ -49,11 +49,6 @@ class SourceAnalysisResult(BaseModel):
     summary: dict[str, int] = Field(default_factory=dict)
 
 
-# Patterns for Python web frameworks — simplified for CLI usage
-_FORM_PATTERNS = re.compile(r"class\s+(\w+)\s*\([^)]*(?:BaseModel|Schema|Model)[^)]*\):", re.VERBOSE)
-
-_ROUTE_PATTERNS = re.compile(r"@[\w.]+(?:get|post|put|delete|patch)\s*\(\s*['\"]([^'\"]+)['\"]", re.VERBOSE)
-
 _TYPE_MAP: dict[str, str] = {
     "emailfield": "email",
     "email": "email",
